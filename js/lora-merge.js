@@ -8,13 +8,17 @@ app.registerExtension({
             nodeType.prototype.onConnectionsChange = function (type, index, connected) {
                 if (type !== 1 ) return;
 
-                this.inputs.forEach((input, i) => input.name = `lora${i + 1}`);
+                const loraInputs = this.inputs.filter(input => input.name.startsWith('lora'));
 
-                if (connected && this.inputs[this.inputs.length - 1].link !== null) {
-                    this.addInput(`lora${this.inputs.length + 1}`, this.inputs[0].type);
+                loraInputs.forEach((input, i) => input.name = `lora${i + 1}`);
+
+                if (connected && loraInputs.at(-1).link !== null) {
+                    this.addInput(`lora${loraInputs.length + 1}`, loraInputs[0].type);
                 } else {
-                    if (this.inputs.length > 1 && this.inputs[this.inputs.length - 2].link == null)
-                        this.removeInput(this.inputs.length - 1);
+                    if (loraInputs.length > 1 && loraInputs.at(-2).link == null) {
+                        const lastLoraInput = loraInputs.at(-1);
+                        this.removeInput(this.inputs.indexOf(lastLoraInput));
+                    }
                 }
             }
         }
