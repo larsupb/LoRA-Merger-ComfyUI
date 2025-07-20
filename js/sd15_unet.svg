@@ -1,0 +1,177 @@
+<svg width="580" height="550" viewBox="0 0 580 550" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g id="SD1.5 UNet">
+        <path d="M40 42C40 40.8954 40.8954 40 42 40H538C539.105 40 540 40.8954 540 42V508C540 509.105 539.105 510 538 510H42C40.8954 510 40 509.105 40 508V42Z"
+              fill="#444444"/>
+        <path d="M42 40V41H538V40V39H42V40ZM540 42H539V508H540H541V42H540ZM538 510V509H42V510V511H538V510ZM40 508H41V42H40H39V508H40ZM42 510V509C41.4477 509 41 508.552 41 508H40H39C39 509.657 40.3432 511 42 511V510ZM540 508H539C539 508.552 538.552 509 538 509V510V511C539.657 511 541 509.657 541 508H540ZM538 40V41C538.552 41 539 41.4477 539 42H540H541C541 40.3431 539.657 39 538 39V40ZM42 40V39C40.3432 39 39 40.3431 39 42H40H41C41 41.4477 41.4477 41 42 41V40Z"
+              fill="white" fill-opacity="0.1"/>
+        <path id="Up Arrow"
+              d="M453.707 45.2929C453.317 44.9024 452.683 44.9024 452.293 45.2929L445.929 51.6569C445.538 52.0474 445.538 52.6805 445.929 53.0711C446.319 53.4616 446.953 53.4616 447.343 53.0711L453 47.4142L458.657 53.0711C459.047 53.4616 459.681 53.4616 460.071 53.0711C460.462 52.6805 460.462 52.0474 460.071 51.6569L453.707 45.2929ZM453 69L454 69L454 46L453 46L452 46L452 69L453 69Z"
+              fill="white"/>
+        <g id="output_blocks.11">
+            <rect id="output_blocks.4.rect" x="346" y="157" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.11.0.rect" x="474" y="160" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="346" y="166.977">Output Block 11</tspan></text>
+            <text id="output_blocks.11.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="346.216" y="180.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.10">
+            <rect id="Rectangle 1" x="340" y="187" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.10.0.rect" x="468" y="190" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_2" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="340" y="196.977">Output Block 10</tspan></text>
+            <text id="output_blocks.10.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="340.216" y="210.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.9">
+            <rect id="Rectangle 1_2" x="334" y="217" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.9.0.rect" x="462" y="220" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_3" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="334" y="226.977">Output Block 9</tspan></text>
+            <text id="output_blocks.9.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="334.216" y="240.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.8">
+            <rect id="Rectangle 1_3" x="329" y="247" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.8.0.rect" x="457" y="250" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_4" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="329" y="256.977">Output Block 8</tspan></text>
+            <text id="output_blocks.8.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="329.216" y="270.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.7">
+            <rect id="Rectangle 1_4" x="321" y="277" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.7.0.rect" x="449" y="280" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_5" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="321" y="286.977">Output Block 7</tspan></text>
+            <text id="output_blocks.7.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="321.216" y="300.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.6">
+            <rect id="output_blocks.3.rect" x="316" y="307" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.6.0.rect" x="444" y="310" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_6" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="316" y="316.977">Output Block 6</tspan></text>
+            <text id="output_blocks.6.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="316.216" y="330.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.5">
+            <rect id="output_blocks.2.rect" x="310" y="337" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.5.0.rect" x="438" y="340" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_7" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="310" y="346.977">Output Block 5</tspan></text>
+            <text id="output_blocks.5.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="310.216" y="360.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.4">
+            <rect id="output_blocks.0.rect" x="307" y="370" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.4.0.rect" x="435" y="373" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_8" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="307" y="379.977">Output Block 4</tspan></text>
+            <text id="output_blocks.4.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="307.216" y="393.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="output_blocks.3">
+            <rect id="output_blocks.0.rect_2" x="298" y="400" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="output_blocks.3.0.rect" x="426" y="403" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_9" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="298" y="409.977">Output Block 3</tspan></text>
+            <text id="output_blocks.3.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="298.216" y="423.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="middle_blocks.1">
+            <rect id="middle_blocks.1.rect" x="206" y="452" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="middle_blocks.1.0.rect" x="334" y="455" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_10" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="14" font-weight="bold" letter-spacing="-0.02em"><tspan x="206" y="462.341">Middle Block 1</tspan></text>
+            <text id="middle_blocks.1.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="206.216" y="475.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="input_blocks.8">
+            <rect id="input_blocks.8.rect" x="110" y="400" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="input_blocks.8.0.rect" x="238" y="403" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_11" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="110" y="409.977">Input Block 8</tspan></text>
+            <text id="input_blocks.8.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="110.216" y="423.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="input_blocks.7">
+            <rect id="input_blocks.7.rect#" x="103" y="370" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="input_blocks.7.0.rect" x="231" y="373" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_12" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="103" y="379.977">Input Block 7</tspan></text>
+            <text id="input_blocks.7.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="103.216" y="393.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="input_blocks.5">
+            <rect id="input_blocks.5.rect" x="94" y="308" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="input_blocks.5.0.rect" x="222" y="311" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_13" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="94" y="317.977">Input Block 5</tspan></text>
+            <text id="input_blocks.5.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="94.2162" y="331.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="input_blocks.4">
+            <rect id="input_blocks.4.rect" x="80" y="277" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="input_blocks.4.0.rect" x="208" y="280" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_14" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="80" y="286.977">Input Block 4</tspan></text>
+            <text id="input_blocks.4.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="80.2162" y="300.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="input_blocks.3">
+            <rect id="Rectangle 1_11" x="75" y="248" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="input_blocks.3.0.rect" x="203" y="251" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_21" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="75" y="257.977">Input Block 3</tspan></text>
+            <text id="input_blocks.3.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="75.2162" y="271.136">SF: 1.0</tspan></text>
+        </g>
+
+        <g id="input_blocks.2">
+            <rect id="Rectangle 1_10" x="65" y="217" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="input_blocks.2.0.rect" x="193" y="220" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_20" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="65" y="226.977">Input Block 2</tspan></text>
+            <text id="input_blocks.2.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="65.2162" y="240.136">SF: 1.0</tspan></text>
+        </g>
+        <g id="input_blocks.1">
+            <rect id="Rectangle 1_9" x="60" y="187" width="150" height="25" fill="#D9D9D9"/>
+            <rect id="input_blocks.1.0.rect" x="188" y="190" width="17.2414" height="17.7273" fill="#65B465"/>
+            <text id="Block Text_19" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="13" font-weight="bold" letter-spacing="-0.02em"><tspan x="60" y="196.977">Input Block 1</tspan></text>
+            <text id="input_blocks.1.sf" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="10" font-weight="bold" letter-spacing="-0.02em"><tspan x="60.2162" y="210.136">SF: 1.0</tspan></text>
+        </g>
+        <path id="Down Arrow"
+              d="M130.293 69.7071C130.683 70.0976 131.317 70.0976 131.707 69.7071L138.071 63.3431C138.462 62.9526 138.462 62.3195 138.071 61.9289C137.681 61.5384 137.047 61.5384 136.657 61.9289L131 67.5858L125.343 61.9289C124.953 61.5384 124.319 61.5384 123.929 61.9289C123.538 62.3195 123.538 62.9526 123.929 63.3431L130.293 69.7071ZM131 46L130 46L130 69L131 69L132 69L132 46L131 46Z"
+              fill="white"/>
+        <g id="GSC Block">
+            <rect id="Rectangle 1_5" x="379" y="83" width="151" height="20" fill="#D9D9D9"/>
+            <text id="Block Text_15" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="14" font-weight="bold" letter-spacing="-0.02em"><tspan x="439.604" y="98.0909">GSC</tspan></text>
+        </g>
+        <g id="SDXL Up Block">
+            <rect id="Rectangle 1_6" x="379" y="105" width="151" height="20" fill="#D9D9D9"/>
+            <text id="Block Text_16" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="412.197" y="119.364">SD1.5 Up Block</tspan></text>
+        </g>
+        <g id="SDXL Down Block">
+            <rect id="Rectangle 1_7" x="56" y="105" width="145" height="20" fill="#D9D9D9"/>
+            <text id="Block Text_17" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="12" font-weight="bold" letter-spacing="-0.02em"><tspan x="77.8117" y="119.364">SD1.5 Down Block</tspan></text>
+        </g>
+        <g id="Convolution Block">
+            <rect id="Rectangle 1_8" x="56" y="83" width="145" height="20" fill="#D9D9D9"/>
+            <text id="Block Text_18" fill="black" xml:space="preserve" style="white-space: pre" font-family="Inter"
+                  font-size="14" font-weight="bold" letter-spacing="-0.02em"><tspan x="88.317" y="98.0909">Convolution</tspan></text>
+        </g>
+    </g>
+    <g id="Rectangle">
+        <rect x="40" y="4" width="71.0625" height="30" rx="3" fill="#444444"/>
+        <rect x="40.5" y="4.5" width="70.0625" height="29" rx="2.5" stroke="white" stroke-opacity="0.0980392"/>
+    </g>
+    <text id="SD1.5 UNet_2" fill="white" xml:space="preserve" style="white-space: pre" font-family="Inter"
+          font-size="11" letter-spacing="0em"><tspan x="46" y="21.5">SD1.5 UNet</tspan></text>
+</svg>

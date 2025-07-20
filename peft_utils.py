@@ -13,7 +13,7 @@
 # limitations under the License.
 import math
 import warnings
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 import torch
 
@@ -268,7 +268,7 @@ def dare_ties(
     return mixed_task_tensors
 
 
-def concat(tensors: list[torch.Tensor], weights: torch.Tensor, dim):
+def concat(tensors: list[torch.Tensor], weights: torch.Tensor, dim) -> torch.Tensor:
     if not tensors:
         raise ValueError("The list of tensors must not be empty.")
 

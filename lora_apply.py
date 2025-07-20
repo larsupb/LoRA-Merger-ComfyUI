@@ -1,4 +1,6 @@
-import comfy
+import logging
+
+from .utility import load_as_comfy_lora
 
 
 class LoraApply:
@@ -17,12 +19,24 @@ class LoraApply:
     CATEGORY = "LoRA PowerMerge"
 
     def apply_merged_lora(self, model, clip, lora):
-        lora_weight = lora["lora"]
         strength_model = lora["strength_model"]
         strength_clip = lora["strength_clip"]
 
         if strength_model == 0 and strength_clip == 0:
-            return (model, clip)
+            return model, clip
 
-        model_lora, clip_lora = comfy.sd.load_lora_for_models(model, clip, lora_weight, strength_model, strength_clip)
-        return (model_lora, clip_lora)
+        if 'lora' not in lora or lora['lora'] is None:
+            lora['lora'] = load_as_comfy_lora(lora, model, clip)
+
+        new_model_patcher = model.clone()
+        k = new_model_patcher.add_patches(lora['lora'], strength_model)
+        new_clip = clip.clone()
+        k1 = new_clip.add_patches(lora['lora'], strength_clip)
+
+        k = set(k)
+        k1 = set(k1)
+        for x in lora["lora"]:
+            if (x not in k) and (x not in k1):
+                logging.warning("PM LoraApply: NOT LOADED {}".format(x))
+
+        return new_model_patcher, new_clip
