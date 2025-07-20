@@ -13,7 +13,7 @@ from mergekit.merge_methods.nearswap import nearswap_merge
 from mergekit.merge_methods.nuslerp import NuSlerpTask
 
 import comfy
-from .utility import map_device
+from ..utility import map_device
 
 
 class MergeMethod(Protocol):

@@ -232,6 +232,8 @@ app.registerExtension({
                         blocks.forEach(block => {
                             let blockId = block.id;
                             set_svg_color(block, settings.blockScales[blockId]);
+                            // Create event listeners for the new blocks
+                            wire_block(block, settings, newWidget);
                         });
                     }
                 }, 100);

@@ -7,7 +7,7 @@ from torch import Tensor
 
 from comfy.sd import VAE
 from comfy_extras.nodes_custom_sampler import SamplerCustom
-from .sd_lora import LORAS_LORA_KEY_DICT, LORA_STRENGTHS
+from .architectures import LORAS_LORA_KEY_DICT, LORA_STRENGTHS
 from .utility import load_font
 
 

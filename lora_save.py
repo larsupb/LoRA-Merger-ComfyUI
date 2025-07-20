@@ -4,7 +4,7 @@ import comfy
 import folder_paths
 
 
-from .sd_lora import convert_to_regular_lora
+from .architectures.sd_lora import convert_to_regular_lora
 
 class LoraSave:
     def __init__(self):

@@ -17,10 +17,9 @@ def detect_block_names(layer_key) -> dict[str, str | Any] | None:
         match = exp.search(layer_key)
         if match:
             out = {
-                "block_type": match.group("block_type"),
                 "block_idx": match.group("block_idx"),
                 "component": match.group("component"),
-                "main_block": f"{match.group("block_type")}.{match.group("block_idx")}",
+                "main_block": f"blocks.{match.group("block_idx")}",
             }
             return out
     return None

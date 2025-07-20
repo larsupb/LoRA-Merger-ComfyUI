@@ -1,6 +1,6 @@
-import torch
-
 from typing import Dict, Literal
+
+import torch
 from mergekit.common import ModelReference
 
 MERGEKIT_GTA_MODES = Literal[

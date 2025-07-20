@@ -6,7 +6,7 @@ import torch
 from PIL import ImageFont
 
 import comfy
-from .sd_lora import UP_DOWN_ALPHA_TUPLE
+from .architectures.sd_lora import UP_DOWN_ALPHA_TUPLE
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
 
@@ -47,7 +47,7 @@ def adjust_tensor_dims(ups_downs_alphas: Dict[str, UP_DOWN_ALPHA_TUPLE], apply_s
         apply_svd (bool): Whether to apply SVD for dimension adjustment.
         svd_rank (int): Rank for SVD adjustment. If -1, uses the rank of the first tensor.
     """
-    up_0, up_1, alpha_0 = next(iter(ups_downs_alphas.values()))
+    up_0, up_1, _ = next(iter(ups_downs_alphas.values()))
     target_rank = up_0.shape[1] if svd_rank == -1 else svd_rank
 
     out = {}

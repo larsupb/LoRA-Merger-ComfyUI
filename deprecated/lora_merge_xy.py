@@ -6,7 +6,7 @@ import torch
 
 import folder_paths
 from comfy.sd import load_lora_for_models
-from .lora_load import LoraPowerMergeLoader
+from ..lora_load import LoraPowerMergeLoader
 from .lora_merge import LoraMerger, MODES
 from .lora_svd_merge import LoraSVDMerger, SVD_MODES
 

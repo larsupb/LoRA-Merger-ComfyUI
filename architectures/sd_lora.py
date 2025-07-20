@@ -8,22 +8,10 @@ import comfy
 import torch
 
 from comfy.model_patcher import ModelPatcher
-from comfy.weight_adapter import LoRAAdapter
-
-LORA_KEY_DICT = Dict[str, LoRAAdapter]    # Key -> (lora type, (up, down, alpha, None, None, None))
-LORAS_LORA_KEY_DICT = Dict[str, LORA_KEY_DICT]                # LoRA name -> LoRA key dict
-LORA_STRENGTHS = Dict[str, Dict[str, float]]
+from .general_architecture import LORAS_LORA_KEY_DICT, LORA_KEY_DICT
 
 SD_LORA_ALPHA_IDX = 2
 UP_DOWN_ALPHA_TUPLE = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-
-
-def get_alpha_value(loras: List, key):
-    for lora in loras:
-        if key in lora["lora"]:
-            # Get the alpha value from the first LoRA that contains the module
-            return lora["lora"][key][1][SD_LORA_ALPHA_IDX]
-    raise ValueError(f"Key {key} not found in any LoRA provided.")
 
 
 def weights_as_tuple(up: torch.Tensor, down: torch.Tensor, alpha: torch.Tensor):
@@ -76,7 +64,7 @@ def calc_up_down_alphas(loras_lora_key_dict: LORAS_LORA_KEY_DICT, key,
         down = lora_tensors[down_idx]
         alpha = lora_tensors[alpha_idx]
 
-        if scale_to_alpha_0 and alpha != alpha_0:
+        if scale_to_alpha_0 and alpha_0 is not None and alpha != alpha_0:
             up = up * math.sqrt(alpha / alpha_0)
             down = down * math.sqrt(alpha / alpha_0)
             alpha = alpha_0
@@ -90,6 +78,7 @@ def calc_up_down_alphas(loras_lora_key_dict: LORAS_LORA_KEY_DICT, key,
     return out
 
 
+@DeprecationWarning
 def scale_alphas(ups_downs_alphas):
     up_1, down_1, alpha_1 = ups_downs_alphas[0]
     out = []
@@ -141,6 +130,10 @@ def convert_to_regular_lora(model, clip, state_dict: LORA_KEY_DICT):
             up_key = "{}.lora_up.weight".format(out_key)
             down_key = "{}.lora_down.weight".format(out_key)
             alpha_key = "{}.alpha".format(out_key)
+
+            # check if alpha is None and set it to 1.0
+            if alpha is None:
+                alpha = 1.0
 
             out[up_key] = up
             out[down_key] = down

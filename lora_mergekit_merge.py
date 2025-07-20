@@ -1,7 +1,7 @@
 import hashlib
 import logging
-import time
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import get_args, Dict, Protocol, Optional, Any, Set
 
@@ -22,10 +22,9 @@ from mergekit.sparsify import RescaleNorm
 
 import comfy
 from comfy.weight_adapter import LoRAAdapter
+from .architectures import LORAS_LORA_KEY_DICT, LORA_STRENGTHS
+from .architectures.sd_lora import UP_DOWN_ALPHA_TUPLE, weights_as_tuple, analyse_keys, calc_up_down_alphas
 from .mergekit_utils import MERGEKIT_GTA_MODES, load_on_device
-from .nodes_experimental_methods import cosine_merge
-from .sd_lora import LORAS_LORA_KEY_DICT, LORA_STRENGTHS, UP_DOWN_ALPHA_TUPLE, weights_as_tuple
-from .sd_lora import analyse_keys, calc_up_down_alphas
 from .utility import map_device, adjust_tensor_dims
 
 LORA_COMPONENT_DICT = Dict[str, UP_DOWN_ALPHA_TUPLE]
@@ -287,8 +286,8 @@ class LoraDecompose:
         for lora_name, lora_key_dict in lora_key_dicts.items():
             for key in lora_key_dict.keys():
                 lora_adapter = lora_key_dict[key]
-                up, down, alpha, _, _, _ = lora_adapter.weights
-                sum_ += up.sum().item() + down.sum().item() + alpha
+                up, down, _, _, _, _ = lora_adapter.weights
+                sum_ += up.sum().item() + down.sum().item()
         return sum_
 
     def decompose(self, key_dicts, device, svd_if_required, svd_rank) -> LORAS_COMPONENT_DICT:
@@ -399,8 +398,6 @@ class LoraMergerMergekit:
             merge_method = kArcher
         elif method['name'] == "arcee_fusion":
             merge_method = arcee_fusion
-        elif method['name'] == "cosine_merge":
-            merge_method = cosine_merge
         elif method['name'] in get_args(MERGEKIT_GTA_MODES):
             merge_method = generalized_task_arithmetic_merge
         else:
@@ -455,8 +452,8 @@ class LoraMergerMergekit:
                 out = method(tensor_map, gather_tensors, weight_info, tensor_parameters, method_args)
 
                 # Apply lambda scaling
-                if method_args['lambda_'] != 1.0:
-                    out = out * method_args['lambda_']
+                if lambda_ < 1.0:
+                    out = out * lambda_
 
                 # Offload the result to CPU
                 load_on_device(tensor_map, tensor_weight_map, "cpu", dtype)

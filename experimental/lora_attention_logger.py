@@ -1,16 +1,15 @@
 import io
-from typing import Dict, List
+from collections import defaultdict
+from typing import List
 
 import numpy as np
 import pandas as pd
 import torch
-import comfy
-
 from PIL import Image
-from collections import defaultdict
 from matplotlib import pyplot as plt
 
-from .sd_lora import detect_block_names
+import comfy
+from ..architectures.sd_lora import detect_block_names
 
 # Create a global variable to store the norm values for each layer
 # Format: { layer_name: [norm1, norm2, ...] }

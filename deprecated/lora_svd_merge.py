@@ -4,7 +4,7 @@ import torch
 
 import comfy
 from .peft_utils import task_arithmetic, ties, dare_linear, dare_ties, magnitude_prune
-from .sd_lora import analyse_keys, calc_up_down_alphas
+from .architectures.sd_lora import analyse_keys, calc_up_down_alphas
 from .utility import to_dtype
 
 CLAMP_QUANTILE = 0.99

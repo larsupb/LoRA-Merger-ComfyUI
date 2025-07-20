@@ -1,7 +1,7 @@
 import os
 
-import folder_paths
 import comfy
+import folder_paths
 
 
 class LoraPowerMergeLoader:
