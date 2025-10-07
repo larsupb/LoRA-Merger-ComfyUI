@@ -4,7 +4,7 @@ import torch
 def find_network_dim(lora_sd: dict):
     network_dim = None
     for key, value in lora_sd.items():
-        if network_dim is None and 'lora_down' in key and len(value.size()) == 2:
+        if network_dim is None and ('lora_down' in key or 'lora_A' in key) and len(value.size()) == 2:
             network_dim = value.size()[0]
     return network_dim
 
