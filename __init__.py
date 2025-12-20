@@ -1,17 +1,14 @@
-from .lora_apply import LoraApply
-from .lora_block_sampler import LoRABlockSampler
-from .lora_stack_sampler import LoRAStackSampler
-from .lora_load import LoraPowerMergeLoader
-from .lora_mergekit_merge import LoraMergerMergekit, LoraStack, LoraDecompose, LoraStackFromDir, LoRASelect
-from .lora_resize import LoraResizer
-from .lora_save import LoraSave
-from .nodes_lora_modifier import LoRAModifier
-from .nodes_merge_methods import TaskArithmeticMergeMethod, NearSwapMergeMethod, SCEMergeMethod, BreadcrumbsMergeMethod, \
+from .src.lora_apply import LoraApply
+from .src.lora_block_sampler import LoRABlockSampler
+from .src.lora_load import LoraPowerMergeLoader
+from .src.lora_mergekit_merge import LoraMergerMergekit, LoraStack, LoraDecompose, LoraStackFromDir, LoRASelect
+from .src.lora_resize import LoraResizer
+from .src.lora_save import LoraSave
+from .src.lora_stack_sampler import LoRAStackSampler
+from .src.nodes_lora_modifier import LoRAModifier
+from .src.nodes_merge_methods import TaskArithmeticMergeMethod, NearSwapMergeMethod, SCEMergeMethod, BreadcrumbsMergeMethod, \
     TIESMergeMethod, DAREMergeMethod, DELLAMergeMethod, SLERPMergeMethod, LinearMergeMethod, NuSlerpMergeMethod, \
     ArceeFusionMergeMethod, KArcherMergeMethod
-
-# from .deprecated import XYInputPowerMergeStrengths, XYInputPowerMergeModes, XYInputPowerMergeSVD
-# from .experimental import LoRAAnalyzer, LoRAAttentionLogger, LoRAAttentionPlot
 
 version_code = [0, 11]
 version_str = f"V{version_code[0]}.{version_code[1]}" + (f'.{version_code[2]}' if len(version_code) > 2 else '')
@@ -24,8 +21,6 @@ NODE_CLASS_MAPPINGS = {
     "PM LoRA Stacker (from Directory)": LoraStackFromDir,
     "PM LoRA Select": LoRASelect,
     "PM LoRA Stack Decompose": LoraDecompose,
-
-    # "PM Checkpoint Merger (Mergekit)": CheckpointMergerMergekit,
 
     "PM LoRA Block Sampler": LoRABlockSampler,
     "PM LoRA Stack Sampler": LoRAStackSampler,
@@ -45,21 +40,12 @@ NODE_CLASS_MAPPINGS = {
     "PM Dare (Mergekit)": DAREMergeMethod,
     "PM Della (Mergekit)": DELLAMergeMethod,
 
-    # "PM LoRA Analyzer": LoRAAnalyzer,
-    # "PM LoRA AttentionLogger": LoRAAttentionLogger,
-    # "PM LoRA Attention Plot": LoRAAttentionPlot,
-
     "PM LoRA Modifier": LoRAModifier,
-    # "PM LoRA Prune": LoRAPrune,
 
     "PM LoRA Resizer": LoraResizer,
     "PM LoRA Apply": LoraApply,
     "PM LoRA Loader": LoraPowerMergeLoader,
     "PM LoRA Save": LoraSave,
-
-    # "XY: PM LoRA Strengths": XYInputPowerMergeStrengths,
-    # "XY: PM LoRA Modes": XYInputPowerMergeModes,
-    # "XY: PM LoRA SVD Rank": XYInputPowerMergeSVD,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -69,7 +55,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PM LoRA Stack Decompose": "PM LoRA Stack Decompose",
 
     "PM LoRA Merger (Mergekit)": "PM LoRA Merger (Mergekit)",
-    # "PM Checkpoint Merger (Mergekit)": "PM Checkpoint Merger (Mergekit)",
 
     "PM LoRA Block Sampler": "PM LoRA Block Sampler",
     "PM LoRA Stack Sampler": "PM LoRA Stack Sampler",
@@ -89,21 +74,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PM Breadcrumbs (Mergekit)": "PM Breadcrumbs (Mergekit)",
     "PM Della (Mergekit)": "PM Della (Mergekit)",
 
-    # "PM LoRA Analyzer": "PM LoRA Analyzer",
-    # "PM LoRA AttentionLogger": "PM LoRA Attention Logger",
-    # "PM LoRA Attention Plot": "PM LoRA Attention Plot",
-
     "PM LoRA Modifier": "PM LoRA Modifier",
-    # "PM LoRA Prune": "PM LoRA Prune",
 
     "PM LoRA Resizer": "PM Resize LoRA",
     "PM LoRA Apply": "PM Apply LoRA",
     "PM LoRA Loader": "PM Load LoRA",
     "PM LoRA Save": "PM Save LoRA",
-
-    # "XY: PM LoRA Strengths": "XY: LoRA Power-Merge Strengths",
-    # "XY: PM LoRA Modes": "XY: LoRA Power-Merge Modes",
-    # "XY: PM LoRA SVD Rank": "XY: LoRA Power-Merge SVD Rank",
 }
 
 

@@ -12,7 +12,7 @@ from mergekit.common import ModelReference
 
 from ..architectures import sd_lora
 from comfy.utils import ProgressBar  # Assuming this is thread-safe or replaced
-from ..utility import load_as_comfy_lora
+from comfy_util import load_as_comfy_lora
 
 
 class LoRAAnalyzer:

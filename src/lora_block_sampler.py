@@ -6,9 +6,10 @@ import torch
 from PIL import Image, ImageFont, ImageDraw, ImageChops
 
 from nodes import VAEDecode
-from .utility import load_as_comfy_lora
-from .architectures.sd_lora import detect_block_names
 from comfy_extras.nodes_custom_sampler import SamplerCustom
+
+from .comfy_util import load_as_comfy_lora
+from .architectures.sd_lora import detect_block_names
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
 

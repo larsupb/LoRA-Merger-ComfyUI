@@ -1,0 +1,20 @@
+# Development dependencies for testing LoRA Power-Merger
+
+# Main dependencies (from requirements.txt)
+git+https://github.com/arcee-ai/mergekit.git#egg=mergekit
+lxml
+
+# Testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0  # Coverage reporting
+pytest-mock>=3.10.0  # Advanced mocking utilities
+pytest-xdist>=3.0.0  # Parallel test execution
+
+# Code quality
+black>=23.0.0  # Code formatting
+flake8>=6.0.0  # Linting
+mypy>=1.0.0  # Type checking
+isort>=5.12.0  # Import sorting
+
+# Utilities for testing
+numpy>=1.21.0  # For numerical comparisons

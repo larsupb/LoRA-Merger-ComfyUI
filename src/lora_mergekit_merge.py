@@ -2,7 +2,7 @@ import hashlib
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from typing import get_args, Dict, Protocol, Optional, Any, Set
 
 import torch
@@ -21,6 +21,7 @@ from mergekit.merge_methods.slerp import SlerpTask
 from mergekit.sparsify import RescaleNorm
 
 import comfy
+import comfy.model_management
 from comfy.weight_adapter import LoRAAdapter
 from .architectures import LORAS_LORA_KEY_DICT, LORA_STRENGTHS
 from .architectures.sd_lora import UP_DOWN_ALPHA_TUPLE, weights_as_tuple, analyse_keys, calc_up_down_alphas
@@ -86,6 +87,8 @@ class LoraStack:
                 "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
                 "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
                 "lora1": ("LoRA",),
+            },
+            "optional": {
                 "layer_filter": (
                     ["full", "attn-mlp", "attn-only"], {"default": "full", "tooltip": "Filter for specific layers."}),
             },
@@ -230,6 +233,7 @@ class LoraDecompose:
         self.last_lora_names_hash: Optional[list] = None
         self.last_tensor_sum: float = 0.0
         self.last_svd_rank: int = -1
+        self.last_decomposition_method: str = ""
         self.last_layer_filter: Optional[Set[str]] = None
         self.last_result: LORAS_COMPONENT_DICT = {}
 
@@ -238,9 +242,34 @@ class LoraDecompose:
         return {
             "required": {
                 "key_dicts": ("LoRAKeyDict",),
-                "svd_if_required": (
-                    ["True", "False"], {"default": "True", "tooltip": "Apply SVD to align tensor dimensions."}),
-                "svd_rank": ("INT", {"default": -1, "min": -1, "max": 128, "tooltip": "Rank for SVD."}),
+                 "decomposition_method": (
+                    ["none", "rSVD", "energy_rSVD", "SVD"],
+                    {
+                        "default": "rSVD",
+                        "tooltip": (
+                            "Method used to reconcile LoRA ranks when they differ. "
+                            "'none' will raise an error if ranks do not match. "
+                            "'SVD' uses full singular value decomposition (slow but optimal). "
+                            "'rSVD' uses randomized SVD (much faster, near-optimal). "
+                            "'energy_rSVD' first prunes low-energy LoRA components and then "
+                            "applies randomized SVD for fast, stable rank reduction "
+                            "(recommended for DiT and large LoRAs)."
+                        ),
+                    }
+                ),
+                "svd_rank": (
+                    "INT",
+                    {
+                        "default": -1,
+                        "min": -1,
+                        "max": 128,
+                        "tooltip": (
+                            "Target LoRA rank after decomposition. "
+                            "-1 keeps the rank of the first LoRA. "
+                            "Lower values reduce model size and strength."
+                        ),
+                    }
+                ),
                 "device": (["cuda", "cpu"],),
             },
         }
@@ -250,13 +279,16 @@ class LoraDecompose:
     CATEGORY = "LoRA PowerMerge"
 
     def lora_decompose(self, key_dicts: LORAS_LORA_KEY_DICT = None,
-                       svd_if_required=True, svd_rank=-1, device=None):
+                       decomposition_method="rSVD", svd_rank=-1, device=None):
         device, _ = map_device(device, "float32")
+
+        print("Decomposing LoRAs with method:", decomposition_method, "and SVD rank:", svd_rank)
 
         # check if key_dicts differs from the previous one
         lora_names_hash_new = self.compute_hash(list(key_dicts.keys()))
         if (self.last_lora_names_hash == lora_names_hash_new
                 and self.last_svd_rank == svd_rank
+                and self.last_decomposition_method == decomposition_method
                 and self.last_tensor_sum == self.compute_sum(key_dicts)):
             logging.info("Key dicts have not changed, returning last result.")
             if self.last_result is not None:
@@ -269,8 +301,10 @@ class LoraDecompose:
         self.last_lora_names_hash = lora_names_hash_new
         self.last_tensor_sum = self.compute_sum(key_dicts)
         self.last_svd_rank = svd_rank
+        self.last_decomposition_method = decomposition_method
 
-        self.last_result = self.decompose(key_dicts=key_dicts, device=device, svd_if_required=svd_if_required,
+        self.last_result = self.decompose(key_dicts=key_dicts, device=device,
+                                          decomposition_method=decomposition_method,
                                           svd_rank=svd_rank)
         return (self.last_result,)
 
@@ -290,14 +324,14 @@ class LoraDecompose:
                 sum_ += up.sum().item() + down.sum().item()
         return sum_
 
-    def decompose(self, key_dicts, device, svd_if_required, svd_rank) -> LORAS_COMPONENT_DICT:
+    def decompose(self, key_dicts, device, decomposition_method, svd_rank) -> LORAS_COMPONENT_DICT:
         """
         Decomposes LoRA models into their components.
         Args:
             key_dicts: Dictionary of LoRA names and their respective keys.
             device: Device to load tensors on.
-            svd_if_required: Whether to apply SVD to align tensor dimensions.
-            svd_rank: Rank for SVD.
+            decomposition_method: Method to use for dimension alignment ("none", "svd", "rSVD", or "energy_rSVD").
+            svd_rank: Target rank for decomposition.
         Returns:
             Dictionary of LoRA components.
             lora_key -> lora_name -> (up, down, alpha)
@@ -309,25 +343,33 @@ class LoraDecompose:
 
         def process_key(key, device_=device) -> LORA_COMPONENT_DICT:
             uda = calc_up_down_alphas(key_dicts, key, load_device=device_, scale_to_alpha_0=True)
-            uda_adjusted = adjust_tensor_dims(uda, apply_svd=svd_if_required, svd_rank=svd_rank)
-            return uda_adjusted
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            # distribute the work across available devices
-            devices_avail = list({"cpu", device})
+            # Determine if SVD should be applied
+            if decomposition_method == "none":
+                # Check if all LoRAs have the same rank
+                ranks = [up.shape[1] for up, _, _ in uda.values()]
+                if len(set(ranks)) > 1:
+                    rank_info = {lora_name: up.shape[1] for lora_name, (up, _, _) in uda.items()}
+                    raise ValueError(
+                        f"LoRAs have different ranks for key '{key}': {rank_info}. "
+                        f"Please select a decomposition method (SVD, rSVD, or energy_rSVD) to align dimensions."
+                    )
+                # No adjustment needed
+                return uda
+            else:
+                # Apply the selected decomposition method
+                uda_adjusted = adjust_tensor_dims(
+                    uda,
+                    apply_svd=True,
+                    svd_rank=svd_rank,
+                    method=decomposition_method
+                )
+                return uda_adjusted
 
-            futures = {
-                executor.submit(process_key, key, devices_avail[i % len(devices_avail)]): key
-                for i, key in enumerate(keys)
-            }
-
-            out = {}
-            for future in as_completed(futures):
-                key = futures[future]
-                result = future.result()
-                if result:
-                    out[key] = result
-                pbar.update(1)
+        out = {}
+        for i, key in enumerate(keys):
+            out[key] = process_key(key)
+            pbar.update(1)
 
         print(f"Processed {len(keys)} keys in {time.time() - start:.2f} seconds")
 
@@ -573,15 +615,16 @@ def sce(
 ) -> torch.Tensor:
     first_tensor = next(iter(tensors.values()))
 
-    # # Apply weight to each tensor
-    # weighted_tensors = []
-    # for ref, tv in tensor_parameters.items():
-    #     weighted_tensors.append(tv["weight"] * tensors[ref])  # Ensure that the weight is applied to the tensor
+    # Apply weight to each tensor
+    weighted_tensors = []
+    for ref in tensors.keys():
+        weight = tensor_parameters[ref]["weight"]
+        weighted_tensors.append(weight * tensors[ref])
 
     # Add full zeros tensor to the tensors and set it as base tensor
     # This is a dummy tensor (zeros) that will have no effect on the merge
     zeros_tensor = torch.zeros_like(first_tensor)
-    return sce_merge(tensors=list(tensors.values()), base_tensor=zeros_tensor,
+    return sce_merge(tensors=weighted_tensors, base_tensor=zeros_tensor,
                      int8_mask=method_args['int8_mask'],
                      select_topk=method_args['select_topk']) * method_args['lambda_']
 
@@ -593,6 +636,13 @@ def kArcher(
         tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
         method_args: Optional[Dict] = ...,
 ) -> torch.Tensor:
+    # Apply strength weights to the tensors before computing Karcher mean
+    # Karcher uses equal weights internally, so we pre-scale the tensors
+    weighted_tensors = {}
+    for ref in tensors.keys():
+        weight = tensor_parameters[ref]["weight"]
+        weighted_tensors[ref] = weight * tensors[ref]
+
     merge = KarcherMerge()
     task = merge.make_task(
         output_weight=weight_info,
@@ -604,7 +654,7 @@ def kArcher(
         }),
         tensor_parameters=tensor_parameters,
     )
-    return task.execute(tensors=tensors) * method_args['lambda_']
+    return task.execute(tensors=weighted_tensors) * method_args['lambda_']
 
 
 def slerp_merge(
@@ -614,11 +664,18 @@ def slerp_merge(
         tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
         method_args: Optional[Dict] = ...,
 ) -> torch.Tensor:
-    first_model_ref = list(tensors.keys())[0]
+    # SLERP interpolates between exactly two models
+    # Apply strength weights to the tensors before interpolation
+    weighted_tensors = {}
+    for ref in tensors.keys():
+        weight = tensor_parameters[ref]["weight"]
+        weighted_tensors[ref] = weight * tensors[ref]
+
+    first_model_ref = list(weighted_tensors.keys())[0]
 
     task = SlerpTask(gather_tensors=gather_tensors, base_model=first_model_ref,
                      weight_info=weight_info, t=method_args['t'])
-    return task.execute(tensors=tensors) * method_args['lambda_']
+    return task.execute(tensors=weighted_tensors) * method_args['lambda_']
 
 
 def nuslerp_merge(
@@ -643,12 +700,19 @@ def nearswap_merge_(
 ) -> torch.Tensor:
     method_args = method_args or {}
 
+    # Apply strength weights to the tensors
+    weighted_tensors = {}
+    for ref in tensors.keys():
+        weight = tensor_parameters[ref]["weight"]
+        weighted_tensors[ref] = weight * tensors[ref]
+
     # take the first tensor as base tensor
-    first_model = tensors.pop(list(tensors.keys())[0])
+    first_model_ref = list(weighted_tensors.keys())[0]
+    first_model = weighted_tensors.pop(first_model_ref)
     # check that there is only one tensor left
-    if len(tensors) != 1:
+    if len(weighted_tensors) != 1:
         raise RuntimeError("NearSwap merge expects exactly two models")
-    second_model = list(tensors.values())  # Must be length 1
+    second_model = list(weighted_tensors.values())  # Must be length 1
 
     divisor = 1
     if method_args['normalize']:
@@ -669,8 +733,14 @@ def arcee_fusion(
         tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
         method_args: Optional[Dict] = ...,
 ) -> torch.Tensor:
+    # Apply strength weights to the tensors
+    weighted_tensors = {}
+    for ref in tensors.keys():
+        weight = tensor_parameters[ref]["weight"]
+        weighted_tensors[ref] = weight * tensors[ref]
+
     # take the first tensor as base tensor
-    first_model = list(tensors.keys())[0]
+    first_model = list(weighted_tensors.keys())[0]
 
     merge = ArceeFusionMerge()
     task = merge.make_task(
@@ -679,5 +749,5 @@ def arcee_fusion(
         base_model=first_model,
     )
     return task.execute(
-        tensors=tensors,
+        tensors=weighted_tensors,
     ) * method_args['lambda_']
