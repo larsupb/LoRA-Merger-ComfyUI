@@ -22,7 +22,7 @@ class LoRAAnalyzer:
             "required": {
                 "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
                 "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
-                "lora": ("LoRA",),
+                "lora": ("LoRABundle",),
                 "indicator": (["frobenius_norm", "sparsity"],),
             },
         }

@@ -5,7 +5,7 @@ from typing import Tuple, Dict
 import torch
 from PIL import ImageFont
 
-from .architectures.sd_lora import UP_DOWN_ALPHA_TUPLE
+from .architectures.sd_lora import LORA_TENSORS
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
 
@@ -25,8 +25,8 @@ def find_network_dim(lora_sd: dict):
     return network_dim
 
 
-def adjust_tensor_dims(ups_downs_alphas: Dict[str, UP_DOWN_ALPHA_TUPLE], apply_svd=False, svd_rank=-1, method='rSVD') -> Dict[
-    str, UP_DOWN_ALPHA_TUPLE]:
+def adjust_tensor_dims(ups_downs_alphas: Dict[str, LORA_TENSORS], apply_svd=False, svd_rank=-1, method='rSVD') -> Dict[
+    str, LORA_TENSORS]:
     """
     Checks if tensor dimensions and eventually aligns them to the first tensor with SVD or QR
     Args:

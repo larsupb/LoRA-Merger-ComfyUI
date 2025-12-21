@@ -9,7 +9,7 @@ from nodes import VAEDecode
 from comfy_extras.nodes_custom_sampler import SamplerCustom
 
 from .comfy_util import load_as_comfy_lora
-from .architectures.sd_lora import detect_block_names
+from .architectures import sd_lora, dit_lora
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
 
@@ -20,18 +20,17 @@ class LoRABlockSampler:
         return {
             "required": {
                 "model": ("MODEL",),
-                "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
                 "add_noise": ("BOOLEAN", {"default": True}),
                 "noise_seed": (
                     "INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}
                 ),
                 "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01}),
-                "positive_text": ("STRING",),
-                "negative_text": ("STRING",),
+                "positive": ("CONDITIONING",),
+                "negative": ("CONDITIONING",),
                 "sampler": ("SAMPLER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "lora": ("LoRA",),
+                "lora": ("LoRABundle",),
                 "vae": ("VAE",),
                 "bock_sampling_mode": (["round_robin_exclude", "round_robin_include"],),
                 "image_display": (["image", "image_diff"],)
@@ -42,17 +41,54 @@ class LoRABlockSampler:
     FUNCTION = "sample"
     CATEGORY = "LoRA PowerMerge/sampling"
 
-    def sample(self, model, clip, add_noise, noise_seed, cfg, positive_text, negative_text, sampler, sigmas,
+    def sample(self, model, add_noise, noise_seed, cfg, positive, negative, sampler, sigmas,
                latent_image, lora, vae, bock_sampling_mode, image_display):
-        if lora["lora"] is None:
-            lora['lora'] = load_as_comfy_lora(lora, model, clip)
+        if 'lora' not in lora or lora['lora'] is None:
+            lora['lora'] = load_as_comfy_lora(lora, model)
 
         action = "include" if bock_sampling_mode == "round_robin_include" else "exclude"
 
         patch_dict = lora['lora']
+
+        # Debug: Log first few keys to understand structure
+        sample_keys = list(patch_dict.keys())[:3]
+        logging.info(f"PM LoRABlockSampler: Sample keys from patch_dict: {sample_keys}")
+
+        # Helper function to extract string key from various formats
+        def get_string_key(key):
+            """Extract string key from tuple or return as-is if already string"""
+            if isinstance(key, tuple) and len(key) > 0 and isinstance(key[0], str):
+                return key[0]
+            elif isinstance(key, str):
+                return key
+            return None
+
+        # Build a mapping of string keys for detection only
+        # Keep original keys intact for patch application
+        string_keys_for_detection = []
+        for key in patch_dict.keys():
+            str_key = get_string_key(key)
+            if str_key:
+                string_keys_for_detection.append(str_key)
+
+        # Auto-detect architecture using string keys
+        detection_dict = {get_string_key(k): v for k, v in patch_dict.items() if get_string_key(k)}
+        arch = dit_lora.detect_architecture(detection_dict)
+        if arch == "dit":
+            logging.info("PM LoRABlockSampler: Detected DiT architecture")
+            detect_fn = dit_lora.detect_block_names
+        else:
+            logging.info("PM LoRABlockSampler: Using SD/SDXL architecture")
+            detect_fn = sd_lora.detect_block_names
+
+        # Detect main blocks using string keys
         main_blocks = set()
-        for layer_key, value in patch_dict.items():
-            block_names = detect_block_names(layer_key)
+        for key in patch_dict.keys():
+            str_key = get_string_key(key)
+            if not str_key:
+                logging.warning(f"PM LoRABlockSampler: Skipping unsupported key type: {type(key)} = {key}")
+                continue
+            block_names = detect_fn(str_key)
             if block_names is None:
                 continue
             main_blocks.add(block_names["main_block"])
@@ -64,14 +100,26 @@ class LoRABlockSampler:
         main_blocks = ["NONE", "ALL"] + sorted(list(main_blocks))
         for block in main_blocks:
             patch_dict_filtered = {}
-            for layer_key, value in patch_dict.items():
+            for orig_key, value in patch_dict.items():
+                # Get string representation for filtering logic
+                str_key = get_string_key(orig_key)
+                if not str_key:
+                    continue
                 if block == "NONE":
                     continue
                 if block == "ALL":
-                    patch_dict_filtered[layer_key] = value
+                    # Use original key to preserve metadata
+                    patch_dict_filtered[orig_key] = value
                 else:
-                    if (action == "include" and block in layer_key) or (action == "exclude" and block not in layer_key):
-                        patch_dict_filtered[layer_key] = value
+                    # Detect which main_block this key belongs to
+                    block_names = detect_fn(str_key)
+                    key_main_block = block_names["main_block"] if block_names and "main_block" in block_names else None
+
+                    # Filter based on detected main_block
+                    if key_main_block:
+                        if (action == "include" and key_main_block == block) or \
+                           (action == "exclude" and key_main_block != block):
+                            patch_dict_filtered[orig_key] = value
 
             if block == "NONE":
                 logging.info("PM LoRABlockSampler: Do not apply any of the patches.")
@@ -83,15 +131,6 @@ class LoRABlockSampler:
 
             new_model_patcher = model.clone()
             new_model_patcher.add_patches(patch_dict_filtered, lora['strength_model'])
-            new_clip = clip.clone()
-            new_clip.add_patches(patch_dict_filtered, lora['strength_clip'])
-
-            # Use patched clip to condition the model
-            tokens = new_clip.tokenize(positive_text)
-            positive = new_clip.encode_from_tokens_scheduled(tokens)
-
-            tokens = new_clip.tokenize(negative_text)
-            negative = new_clip.encode_from_tokens_scheduled(tokens)
 
             denoised, _ = kSampler.sample(
                 model=new_model_patcher,

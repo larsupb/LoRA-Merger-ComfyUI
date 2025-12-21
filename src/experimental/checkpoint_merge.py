@@ -37,7 +37,7 @@ class CheckpointMergerMergekit:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "method": ("PMBaseModelMethod",),
+                "method": ("MergeMethod",),
                 "base_model": ("MODEL",),
                 "model1": ("MODEL",),
                 "lambda_": ("FLOAT", {

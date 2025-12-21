@@ -8,17 +8,19 @@ import comfy
 import torch
 
 from comfy.model_patcher import ModelPatcher
-from .general_architecture import LORAS_LORA_KEY_DICT, LORA_KEY_DICT
+from .general_architecture import LORA_STACK, LORA_KEY_DICT
 
 SD_LORA_ALPHA_IDX = 2
-UP_DOWN_ALPHA_TUPLE = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+LORA_TENSORS = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+LORA_TENSOR_DICT = Dict[str, LORA_TENSORS]
+LORA_TENSORS_BY_LAYER = Dict[str, LORA_TENSOR_DICT]
 
 
 def weights_as_tuple(up: torch.Tensor, down: torch.Tensor, alpha: torch.Tensor):
     return (up, down, alpha, None, None, None)
 
 
-def analyse_keys(loras: LORAS_LORA_KEY_DICT) -> Set[str]:
+def analyse_keys(loras: LORA_STACK) -> Set[str]:
     keys = set()
     for i, lora in enumerate(loras.values()):
         key_count = 0
@@ -31,8 +33,8 @@ def analyse_keys(loras: LORAS_LORA_KEY_DICT) -> Set[str]:
     return keys
 
 
-def calc_up_down_alphas(loras_lora_key_dict: LORAS_LORA_KEY_DICT, key,
-                        load_device=None, scale_to_alpha_0=False) -> Dict[str, UP_DOWN_ALPHA_TUPLE]:
+def calc_up_down_alphas(loras_lora_key_dict: LORA_STACK, key,
+                        load_device=None, scale_to_alpha_0=False) -> LORA_TENSOR_DICT:
     """
        Calculate up, down tensors and alphas for a given key.
 
@@ -89,7 +91,7 @@ def scale_alphas(ups_downs_alphas):
     return out, alpha_1
 
 
-def sd_to_diffusers_map(model: ModelPatcher, clip: ModelPatcher) -> Dict[str, str]:
+def sd_to_diffusers_map(model: ModelPatcher) -> Dict[str, str]:
     diffusers_keys = comfy.utils.unet_to_diffusers(model.model.model_config.unet_config)
 
     key_map = {}
@@ -107,18 +109,13 @@ def sd_to_diffusers_map(model: ModelPatcher, clip: ModelPatcher) -> Dict[str, st
                     diffusers_lora_key = diffusers_lora_key[:-2]
                 key_map[diffusers_lora_key] = unet_key
 
-    clip_key_map = comfy.lora.model_lora_keys_clip(clip.cond_stage_model, key_map)
-
     # Create inverse entries for key_map
     inverse_map = {v: k for k, v in key_map.items()}
-    # add inverse entries for clip_key_map
-    for k, v in clip_key_map.items():
-        inverse_map[v] = k
     return inverse_map
 
 
-def convert_to_regular_lora(model, clip, state_dict: LORA_KEY_DICT):
-    diffusers_map = sd_to_diffusers_map(model, clip)
+def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
+    diffusers_map = sd_to_diffusers_map(model)
     out = {}
     for sd_key, lora_settings in state_dict.items():
         lora_type: str = lora_settings.name
@@ -144,6 +141,10 @@ def convert_to_regular_lora(model, clip, state_dict: LORA_KEY_DICT):
 
 
 def detect_block_names(layer_key) -> Dict[str, str]:
+    # Convert tuple keys to strings (ComfyUI uses tuple keys)
+    if isinstance(layer_key, tuple):
+        layer_key = layer_key[0]
+
     # With transformer_blocks
     exp_with_transformer = re.compile(r"""
         (?:diffusion_model\.)?                                  # optional prefix
@@ -157,7 +158,7 @@ def detect_block_names(layer_key) -> Dict[str, str]:
         (?P<transformer_idx>\d+)
         \.
         (?P<component>attn1|attn2|ff|proj_in|proj_out)           # top-level component
-        (?:\..+)?                                                # allow nested submodules (e.g. .to_q.weight)        
+        (?:\..+)?                                                # allow nested submodules (e.g. .to_q.weight)
     """, re.VERBOSE)
     # Projection in and out blocks are not part of transformer_blocks, so we need a simpler regex for those.
     exp_simple = re.compile(r"""

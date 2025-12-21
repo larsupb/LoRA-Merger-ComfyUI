@@ -138,7 +138,7 @@ class LoraResizer:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "lora": ("LoRA",),
+                "lora": ("LoRABundle",),
                 "new_rank": ("INT", {
                     "default": 16,
                     "min": 1,  # Minimum value
@@ -152,7 +152,7 @@ class LoraResizer:
             },
         }
 
-    RETURN_TYPES = ("LoRA",)
+    RETURN_TYPES = ("LoRABundle",)
     FUNCTION = "lora_svd_resize"
     CATEGORY = "LoRA PowerMerge"
 

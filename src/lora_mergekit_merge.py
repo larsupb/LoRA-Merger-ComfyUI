@@ -23,13 +23,12 @@ from mergekit.sparsify import RescaleNorm
 import comfy
 import comfy.model_management
 from comfy.weight_adapter import LoRAAdapter
-from .architectures import LORAS_LORA_KEY_DICT, LORA_STRENGTHS
-from .architectures.sd_lora import UP_DOWN_ALPHA_TUPLE, weights_as_tuple, analyse_keys, calc_up_down_alphas
+from .architectures import LORA_STACK, LORA_WEIGHTS
+from .architectures.sd_lora import LORA_TENSORS, LORA_TENSOR_DICT, LORA_TENSORS_BY_LAYER, weights_as_tuple, analyse_keys, calc_up_down_alphas
 from .mergekit_utils import MERGEKIT_GTA_MODES, load_on_device
 from .utility import map_device, adjust_tensor_dims
 
-LORA_COMPONENT_DICT = Dict[str, UP_DOWN_ALPHA_TUPLE]
-LORAS_COMPONENT_DICT = Dict[str, LORA_COMPONENT_DICT]
+# Type aliases are now imported from architectures.sd_lora
 
 
 class MergeMethod(Protocol):
@@ -75,51 +74,6 @@ def apply_layer_filter(patch_dict, layer_filter):
     return patch_dict
 
 
-class LoraStack:
-    """
-       Node for loading LoRA weights
-    """
-
-    @classmethod
-    def INPUT_TYPES(s):
-        return {
-            "required": {
-                "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
-                "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
-                "lora1": ("LoRA",),
-            },
-            "optional": {
-                "layer_filter": (
-                    ["full", "attn-mlp", "attn-only"], {"default": "full", "tooltip": "Filter for specific layers."}),
-            },
-        }
-
-    RETURN_TYPES = ("LoRAKeyDict", "LoRAStrengths",)
-    FUNCTION = "stack_loras"
-    CATEGORY = "LoRA PowerMerge"
-    DESCRIPTION = "Stacks LoRA weights from the given LoRA dictionary and applies them to the model."
-
-    def stack_loras(self, model, clip, lora1=None, layer_filter=None, **kwargs) -> (LORAS_LORA_KEY_DICT, LORA_STRENGTHS):
-        key_map = {}
-        if model is not None:
-            key_map = comfy.lora.model_lora_keys_unet(model.model, key_map)
-        if clip is not None:
-            key_map = comfy.lora.model_lora_keys_clip(clip.cond_stage_model, key_map)
-
-        layer_filter = parse_layer_filter(layer_filter)
-
-        # Load LoRAs and patch key names
-        lora_patch_dicts = {}
-        lora_strengths = {}
-        for v in [lora1] + list(kwargs.values()):
-            patch_dict = comfy.lora.load_lora(v['lora_raw'], key_map)
-            patch_dict = apply_layer_filter(patch_dict, layer_filter)
-            lora_patch_dicts[v['name']] = patch_dict
-            lora_strengths[v['name']] = {'strength_model': v['strength_model'], 'strength_clip': v['strength_clip']}
-
-        return lora_patch_dicts, lora_strengths,
-
-
 class LoraStackFromDir:
     """
        Node for loading LoRA weights
@@ -130,7 +84,6 @@ class LoraStackFromDir:
         return {
             "required": {
                 "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
-                "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
                 "directory": ("STRING",),
                 "layer_filter": (
                     ["full", "attn-mlp", "attn-only"], {"default": "full", "tooltip": "Filter for specific layers."}),
@@ -140,13 +93,13 @@ class LoraStackFromDir:
             },
         }
 
-    RETURN_TYPES = ("LoRAKeyDict", "LoRAStrengths",)
+    RETURN_TYPES = ("LoRAStack", "LoRAWeights",)
     FUNCTION = "stack_loras"
     CATEGORY = "LoRA PowerMerge"
     DESCRIPTION = "Stacks LoRA weights from the given directory and applies them to the model."
 
-    def stack_loras(self, model, clip, directory, layer_filter=None, sort_by: str = None, limit: int = 0) -> \
-            (LORAS_LORA_KEY_DICT, LORA_STRENGTHS):
+    def stack_loras(self, model, directory, layer_filter=None, sort_by: str = None, limit: int = 0) -> \
+            (LORA_STACK, LORA_WEIGHTS):
         # check if directory exists
         if not os.path.isdir(directory):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
@@ -154,8 +107,6 @@ class LoraStackFromDir:
         key_map = {}
         if model is not None:
             key_map = comfy.lora.model_lora_keys_unet(model.model, key_map)
-        if clip is not None:
-            key_map = comfy.lora.model_lora_keys_clip(clip.cond_stage_model, key_map)
 
         layer_filter = parse_layer_filter(layer_filter)
 
@@ -189,7 +140,6 @@ class LoraStackFromDir:
                     lora_patch_dicts[lora_name] = patch_dict
                     lora_strengths[lora_name] = {
                         'strength_model': 1.0,  # Default strength
-                        'strength_clip': 1.0,   # Default strength
                     }
 
         return lora_patch_dicts, lora_strengths,
@@ -203,16 +153,16 @@ class LoRASelect:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "key_dicts": ("LoRAKeyDict",),
+                "key_dicts": ("LoRAStack",),
                 "index": ("INT", {"default": 0, "min": 0, "max": 1000, "tooltip": "Index of the LoRA to select."}),
             },
         }
 
-    RETURN_TYPES = ("LoRA",)
+    RETURN_TYPES = ("LoRABundle",)
     FUNCTION = "select_lora"
     CATEGORY = "LoRA PowerMerge"
 
-    def select_lora(self, key_dicts: LORAS_LORA_KEY_DICT, index: int) -> (LORAS_LORA_KEY_DICT,):
+    def select_lora(self, key_dicts: LORA_STACK, index: int) -> (LORA_STACK,):
         keys = list(key_dicts.keys())
         if index < 0 or index >= len(keys):
             raise IndexError(f"Index {index} out of range for LoRAKeyDict with {len(keys)} items.")
@@ -220,7 +170,6 @@ class LoRASelect:
 
         return ({"lora": key_dicts[selected_key],
                  "strength_model": 1,
-                 "strength_clip": 1,
                  "name": selected_key},)
 
 
@@ -235,13 +184,13 @@ class LoraDecompose:
         self.last_svd_rank: int = -1
         self.last_decomposition_method: str = ""
         self.last_layer_filter: Optional[Set[str]] = None
-        self.last_result: LORAS_COMPONENT_DICT = {}
+        self.last_result: LORA_TENSORS_BY_LAYER = {}
 
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "key_dicts": ("LoRAKeyDict",),
+                "key_dicts": ("LoRAStack",),
                  "decomposition_method": (
                     ["none", "rSVD", "energy_rSVD", "SVD"],
                     {
@@ -274,11 +223,11 @@ class LoraDecompose:
             },
         }
 
-    RETURN_TYPES = ("LoRAComponents",)
+    RETURN_TYPES = ("LoRATensors",)
     FUNCTION = "lora_decompose"
     CATEGORY = "LoRA PowerMerge"
 
-    def lora_decompose(self, key_dicts: LORAS_LORA_KEY_DICT = None,
+    def lora_decompose(self, key_dicts: LORA_STACK = None,
                        decomposition_method="rSVD", svd_rank=-1, device=None):
         device, _ = map_device(device, "float32")
 
@@ -314,7 +263,7 @@ class LoraDecompose:
         return hashlib.md5(str(value).encode()).hexdigest()
 
     @staticmethod
-    def compute_sum(lora_key_dicts: LORAS_LORA_KEY_DICT):
+    def compute_sum(lora_key_dicts: LORA_STACK):
         """Computes the sum of all up, down, and alpha tensors in the LoRA key dicts."""
         sum_ = 0
         for lora_name, lora_key_dict in lora_key_dicts.items():
@@ -324,7 +273,7 @@ class LoraDecompose:
                 sum_ += up.sum().item() + down.sum().item()
         return sum_
 
-    def decompose(self, key_dicts, device, decomposition_method, svd_rank) -> LORAS_COMPONENT_DICT:
+    def decompose(self, key_dicts, device, decomposition_method, svd_rank) -> LORA_TENSORS_BY_LAYER:
         """
         Decomposes LoRA models into their components.
         Args:
@@ -341,7 +290,7 @@ class LoraDecompose:
         pbar = comfy.utils.ProgressBar(len(keys))
         start = time.time()
 
-        def process_key(key, device_=device) -> LORA_COMPONENT_DICT:
+        def process_key(key, device_=device) -> LORA_TENSOR_DICT:
             uda = calc_up_down_alphas(key_dicts, key, load_device=device_, scale_to_alpha_0=True)
 
             # Determine if SVD should be applied
@@ -384,16 +333,16 @@ class LoraMergerMergekit:
     """
 
     def __init__(self):
-        self.components: LORAS_COMPONENT_DICT = {}
-        self.strengths: LORA_STRENGTHS = {}
+        self.components: LORA_TENSORS_BY_LAYER = {}
+        self.strengths: LORA_WEIGHTS = {}
 
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "method": ("PMBaseModelMethod",),
-                "components": ("LoRAComponents", {"tooltip": "The decomposed components of the LoRAs to be merged."}),
-                "strengths": ("LoRAStrengths", {"tooltip": "The weights of the LoRAs to be merged."}),
+                "method": ("MergeMethod",),
+                "components": ("LoRATensors", {"tooltip": "The decomposed components of the LoRAs to be merged."}),
+                "strengths": ("LoRAWeights", {"tooltip": "The weights of the LoRAs to be merged."}),
                 "lambda_": ("FLOAT", {
                     "default": 1,
                     "min": 0,
@@ -406,15 +355,15 @@ class LoraMergerMergekit:
             },
         }
 
-    RETURN_TYPES = ("LoRA",)
+    RETURN_TYPES = ("LoRABundle",)
     FUNCTION = "lora_mergekit"
     CATEGORY = "LoRA PowerMerge"
 
     @torch.no_grad()
     def lora_mergekit(self,
                       method: Dict = None,
-                      components: LORAS_COMPONENT_DICT = None,
-                      strengths: LORA_STRENGTHS = None,
+                      components: LORA_TENSORS_BY_LAYER = None,
+                      strengths: LORA_WEIGHTS = None,
                       lambda_: float = 1.0,
                       device=None, dtype=None):
 
@@ -467,10 +416,9 @@ class LoraMergerMergekit:
         start = time.time()
 
         def process_key(key):
-            lora_key_tuples: Dict[str, UP_DOWN_ALPHA_TUPLE] = self.components[key]
+            lora_key_tuples: LORA_TENSOR_DICT = self.components[key]
 
-            scale_key = "strength_clip" if "clip" in key else "strength_model"
-            weights = [self.strengths[lora_name][scale_key] for lora_name in lora_key_tuples.keys()]
+            weights = [self.strengths[lora_name]["strength_model"] for lora_name in lora_key_tuples.keys()]
             weights = torch.tensor(weights, dtype=dtype).to(device=device)
 
             def calculate(tensors_):
@@ -502,9 +450,40 @@ class LoraMergerMergekit:
                 out = out.to(device='cpu', dtype=torch.float32)
                 return out
 
-            up = calculate([u for u, _, _ in lora_key_tuples.values()])
-            down = calculate([d for _, d, _ in lora_key_tuples.values()])
+            # Extract up and down tensors
+            up_tensors = [u for u, _, _ in lora_key_tuples.values()]
+            down_tensors = [d for _, d, _ in lora_key_tuples.values()]
+
+            # Debug logging
+            if len(up_tensors) > 0:
+                logging.debug(f"Key {key}: up_tensors[0] shape = {up_tensors[0].shape}")
+            if len(down_tensors) > 0:
+                logging.debug(f"Key {key}: down_tensors[0] shape = {down_tensors[0].shape}")
+
+            up = calculate(up_tensors)
+            down = calculate(down_tensors)
             alpha_0 = next(iter(lora_key_tuples.values()))[2]
+
+            # Debug logging for results
+            logging.debug(f"Key {key}: merged up shape = {up.shape}, merged down shape = {down.shape}")
+
+            # Sanity check: up should be (out_features, rank) and down should be (rank, in_features)
+            # For LoRA to work, up.shape[1] should equal down.shape[0] (the rank dimension)
+            # If they're swapped, we'll detect it here
+            if len(up.shape) == 2 and len(down.shape) == 2:
+                # Check if up and down appear to be swapped
+                # up should have more elements in dim 0 than dim 1 (tall matrix)
+                # down should have more elements in dim 1 than dim 0 (wide matrix)
+                up_is_tall = up.shape[0] > up.shape[1]
+                down_is_wide = down.shape[1] > down.shape[0]
+
+                # If up is NOT tall or down is NOT wide, they might be swapped
+                if not up_is_tall and down_is_wide:
+                    # up appears to be a wide matrix, might need transpose
+                    logging.warning(f"Key {key}: up tensor appears to be transposed (shape {up.shape}). This may cause issues.")
+                if up_is_tall and not down_is_wide:
+                    # down appears to be a tall matrix, might need transpose
+                    logging.warning(f"Key {key}: down tensor appears to be transposed (shape {down.shape}). This may cause issues.")
 
             return key, (up, down, alpha_0)
 
@@ -525,7 +504,7 @@ class LoraMergerMergekit:
 
         print(f"Processed {len(keys)} keys in {time.time() - start:.2f} seconds")
 
-        lora_out = {"lora": adapter_state_dict, "strength_model": 1, "strength_clip": 1, "name": "Merge"}
+        lora_out = {"lora": adapter_state_dict, "strength_model": 1, "name": "Merge"}
         return (lora_out,)
 
     def validate_input(self):
@@ -619,14 +598,38 @@ def sce(
     weighted_tensors = []
     for ref in tensors.keys():
         weight = tensor_parameters[ref]["weight"]
-        weighted_tensors.append(weight * tensors[ref])
+        weighted_tensor = weight * tensors[ref]
+        weighted_tensors.append(weighted_tensor)
 
     # Add full zeros tensor to the tensors and set it as base tensor
     # This is a dummy tensor (zeros) that will have no effect on the merge
     zeros_tensor = torch.zeros_like(first_tensor)
-    return sce_merge(tensors=weighted_tensors, base_tensor=zeros_tensor,
-                     int8_mask=method_args['int8_mask'],
-                     select_topk=method_args['select_topk']) * method_args['lambda_']
+
+    # Debug: log tensor shapes before merge
+    input_shape = first_tensor.shape
+    logging.debug(f"SCE merge for {weight_info.name}: input shape = {input_shape}, num_tensors = {len(weighted_tensors)}")
+
+    # Call sce_merge with proper error handling
+    try:
+        result = sce_merge(
+            tensors=weighted_tensors,
+            base_tensor=zeros_tensor,
+            int8_mask=method_args.get('int8_mask', False),
+            select_topk=method_args.get('select_topk', 1.0)
+        )
+    except Exception as e:
+        logging.error(f"SCE merge failed for {weight_info.name}: {e}")
+        raise
+
+    # Apply lambda scaling
+    result = result * method_args.get('lambda_', 1.0)
+
+    # Verify output shape matches input shape
+    if result.shape != input_shape:
+        logging.error(f"SCE merge SHAPE MISMATCH for {weight_info.name}: input {input_shape} -> output {result.shape}")
+        raise RuntimeError(f"SCE merge produced wrong output shape for {weight_info.name}: expected {input_shape}, got {result.shape}")
+
+    return result
 
 
 def kArcher(
@@ -685,10 +688,13 @@ def nuslerp_merge(
         tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
         method_args: Optional[Dict] = ...,
 ) -> torch.Tensor:
+    # Ensure all tensors are contiguous - required for .view() operations in NuSLERP
+    contiguous_tensors = {k: v.contiguous() for k, v in tensors.items()}
+
     task = NuSlerpTask(gather_tensors=gather_tensors, tensor_parameters=tensor_parameters, weight_info=weight_info,
                        row_wise=method_args['nuslerp_row_wise'], flatten=method_args['nuslerp_flatten'],
                        base_model=None)
-    return task.execute(tensors=tensors) * method_args['lambda_']
+    return task.execute(tensors=contiguous_tensors) * method_args['lambda_']
 
 
 def nearswap_merge_(

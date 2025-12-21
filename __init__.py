@@ -1,7 +1,8 @@
 from .src.lora_apply import LoraApply
 from .src.lora_block_sampler import LoRABlockSampler
 from .src.lora_load import LoraPowerMergeLoader
-from .src.lora_mergekit_merge import LoraMergerMergekit, LoraStack, LoraDecompose, LoraStackFromDir, LoRASelect
+from .src.lora_mergekit_merge import LoraMergerMergekit, LoraDecompose, LoraStackFromDir, LoRASelect
+from .src.lora_power_stacker import LoraPowerStacker
 from .src.lora_resize import LoraResizer
 from .src.lora_save import LoraSave
 from .src.lora_stack_sampler import LoRAStackSampler
@@ -17,7 +18,7 @@ print(f"### Loading: ComfyUI LoRA-PowerMerge ({version_str})")
 NODE_CLASS_MAPPINGS = {
     "PM LoRA Merger (Mergekit)": LoraMergerMergekit,
 
-    "PM LoRA Stacker": LoraStack,
+    "PM LoRA Power Stacker": LoraPowerStacker,
     "PM LoRA Stacker (from Directory)": LoraStackFromDir,
     "PM LoRA Select": LoRASelect,
     "PM LoRA Stack Decompose": LoraDecompose,
@@ -49,7 +50,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "PM LoRA Stacker": "PM LoRA Stacker",
+    "PM LoRA Power Stacker": "PM LoRA Power Stacker",
     "PM LoRA Stacker (from Directory)": "PM LoRA Stacker (from Directory)",
     "PM LoRA Select": "PM LoRA Select",
     "PM LoRA Stack Decompose": "PM LoRA Stack Decompose",

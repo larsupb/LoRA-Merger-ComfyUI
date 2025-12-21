@@ -10,7 +10,7 @@ class LinearMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge"
     DESCRIPTION = """
@@ -55,7 +55,7 @@ class SCEMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Task Arithmetic"
     DESCRIPTION = """
@@ -116,7 +116,7 @@ class TaskArithmeticMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Task Arithmetic"
     DESCRIPTION = """
@@ -166,7 +166,7 @@ class TIESMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Task Arithmetic"
     DESCRIPTION = """
@@ -229,7 +229,7 @@ class BreadcrumbsMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Task Arithmetic"
     DESCRIPTION = """
@@ -325,7 +325,7 @@ class DAREMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Task Arithmetic"
     DESCRIPTION = """
@@ -394,7 +394,7 @@ class DELLAMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Task Arithmetic"
     DESCRIPTION = """
@@ -460,7 +460,7 @@ class SLERPMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Spherical Interpolation Methods"
     DESCRIPTION = """
@@ -504,7 +504,7 @@ class NuSlerpMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Spherical Interpolation Methods"
     DESCRIPTION = """
@@ -563,7 +563,7 @@ class KArcherMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Spherical Interpolation Methods"
     DESCRIPTION = """
@@ -613,7 +613,7 @@ class NearSwapMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Specialized Methods"
     DESCRIPTION = """
@@ -655,7 +655,7 @@ class ArceeFusionMergeMethod:
     def INPUT_TYPES(cls):
         return {}
 
-    RETURN_TYPES = ("PMBaseModelMethod",)
+    RETURN_TYPES = ("MergeMethod",)
     FUNCTION = "execute"
     CATEGORY = "LoRA PowerMerge/Specialized Methods"
     DESCRIPTION = """

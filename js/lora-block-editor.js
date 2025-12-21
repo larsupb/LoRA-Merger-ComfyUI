@@ -15,12 +15,13 @@ fetch(url + "sd15_unet.svg")
         sd15_unet = svg;
     });
 
-let blocks_wan21 = null;
-fetch(url + "blocks_wan2.1.svg")
+let dit = null;
+fetch(url + "dit.svg")
     .then(response => response.text())
     .then(svg => {
-        blocks_wan21 = svg;
+        dit = svg;
     });
+
 
 
 
@@ -58,8 +59,8 @@ app.registerExtension({
                 div_unet.innerHTML = sdxl_unet;
             } else if (mode === "sd15") {
                 div_unet.innerHTML = sd15_unet;
-            } else if (mode === "wan21") {
-                div_unet.innerHTML = blocks_wan21;
+            } else if (mode === "dit") {
+                div_unet.innerHTML = dit;
             }
         }
 
@@ -144,7 +145,7 @@ app.registerExtension({
                 modelTypeSelect.innerHTML = `
                     <option value="sdxl">SDXL</option>
                     <option value="sd15">SD 1.5</option>
-                    <option value="wan21">WAN 2.1</option>
+                    <option value="dit">DiT (40 layers)</option>
                 `;
 
                 // SVG container - flex grow
@@ -163,7 +164,14 @@ app.registerExtension({
                     load_network(selectedModel, div_unet);
                     // Reset block scales for the new SVG
                     // Therefore we need to find out all blocks in the new SVG
-                    const allBlocks = div_unet.querySelectorAll("[id*='blocks.']");
+                    let allBlocks;
+                    if (selectedModel === "dit") {
+                        // For DiT, select layer groups
+                        allBlocks = div_unet.querySelectorAll("[id*='layers_group.']");
+                    } else {
+                        // For SD/SDXL, select blocks
+                        allBlocks = div_unet.querySelectorAll("[id*='blocks.']");
+                    }
                     const blocks = Array.from(allBlocks)
                         .filter(el => !el.id.includes("rect") && !el.id.includes("grid") && !el.id.includes(".sf"));
                     settings = {"mode": selectedModel, blockScales: {}}
@@ -225,7 +233,12 @@ app.registerExtension({
                         modelTypeSelect.dispatchEvent(new Event("change"));
                     }else {
                         // If blockScales already has values, apply them to the existing blocks
-                        const allBlocks = div_unet.querySelectorAll("[id*='blocks.']");
+                        let allBlocks;
+                        if (settings.mode === "dit") {
+                            allBlocks = div_unet.querySelectorAll("[id*='layers_group.']");
+                        } else {
+                            allBlocks = div_unet.querySelectorAll("[id*='blocks.']");
+                        }
                         const blocks = Array.from(allBlocks)
                             .filter(el => !el.id.includes("rect") && !el.id.includes("grid") && !el.id.includes(".sf"));
 

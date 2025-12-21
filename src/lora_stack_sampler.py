@@ -7,7 +7,7 @@ from torch import Tensor
 
 from comfy.sd import VAE
 from comfy_extras.nodes_custom_sampler import SamplerCustom
-from .architectures import LORAS_LORA_KEY_DICT, LORA_STRENGTHS
+from .architectures import LORA_STACK, LORA_WEIGHTS
 from .utility import load_font
 
 
@@ -17,20 +17,19 @@ class LoRAStackSampler:
         return {
             "required": {
                 "model": ("MODEL",),
-                "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
                 "vae": ("VAE",),
                 "add_noise": ("BOOLEAN", {"default": True}),
                 "noise_seed": (
                     "INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}
                 ),
                 "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01}),
-                "positive_text": ("STRING",),
-                "negative_text": ("STRING",),
+                "positive": ("CONDITIONING",),
+                "negative": ("CONDITIONING",),
                 "sampler": ("SAMPLER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "lora_key_dicts": ("LoRAKeyDict", {"tooltip": "The dictionary containing LoRA names and key weights."}),
-                "lora_strengths": ("LoRAStrengths", {"tooltip": "The LoRA weighting to apply."}),
+                "lora_key_dicts": ("LoRAStack", {"tooltip": "The dictionary containing LoRA names and key weights."}),
+                "lora_strengths": ("LoRAWeights", {"tooltip": "The LoRA weighting to apply."}),
             }
         }
     RETURN_TYPES = ("LATENT", "IMAGE", "IMAGE")
@@ -39,13 +38,13 @@ class LoRAStackSampler:
     CATEGORY = "LoRA PowerMerge/sampling"
     DESCRIPTION = "Samples images by iterating over the given LoRA key dictionary and applying the LoRA weights."
 
-    def sample(self, model, clip, vae: VAE, add_noise, noise_seed, cfg, positive_text, negative_text, sampler, sigmas,
-               latent_image, lora_key_dicts: LORAS_LORA_KEY_DICT = None, lora_strengths: LORA_STRENGTHS = None):
+    def sample(self, model, vae: VAE, add_noise, noise_seed, cfg, positive, negative, sampler, sigmas,
+               latent_image, lora_key_dicts: LORA_STACK = None, lora_strengths: LORA_WEIGHTS = None):
         if lora_key_dicts is None or lora_strengths is None:
             raise ValueError("key_dicts and lora_weighting must be provided.")
 
-        latents_out = self.do_sample(add_noise, cfg, clip, lora_key_dicts, lora_strengths, latent_image, model, noise_seed,
-                                     positive_text, negative_text, sampler, sigmas)
+        latents_out = self.do_sample(add_noise, cfg, lora_key_dicts, lora_strengths, latent_image, model, noise_seed,
+                                     positive, negative, sampler, sigmas)
 
         # Create a grid of images with LoRA names and strengths
         names = list(lora_key_dicts.keys())
@@ -142,8 +141,8 @@ class LoRAStackSampler:
         return out_image
 
     @staticmethod
-    def do_sample(add_noise, cfg, clip, key_dicts, lora_strengths, latent_image, model, noise_seed, positive_text,
-                  negative_text, sampler, sigmas):
+    def do_sample(add_noise, cfg, key_dicts, lora_strengths, latent_image, model, noise_seed, positive,
+                  negative, sampler, sigmas):
         latents_out = []
 
         kSampler = SamplerCustom()
@@ -153,15 +152,6 @@ class LoRAStackSampler:
 
             new_model_patcher = model.clone()
             new_model_patcher.add_patches(patch_dict, strengths['strength_model'])
-            new_clip = clip.clone()
-            new_clip.add_patches(patch_dict, strengths['strength_clip'])
-
-            # Use patched clip to condition the model
-            tokens = new_clip.tokenize(positive_text)
-            positive = new_clip.encode_from_tokens_scheduled(tokens)
-
-            tokens = new_clip.tokenize(negative_text)
-            negative = new_clip.encode_from_tokens_scheduled(tokens)
 
             denoised, _ = kSampler.sample(
                 model=new_model_patcher,

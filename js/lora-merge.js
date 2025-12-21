@@ -23,7 +23,7 @@ app.registerExtension({
             // Add initialization to ensure proper state on load
             nodeType.prototype.onNodeCreated = function() {
                 this.ensureExactlyOneFreeLoRASlot = () => {
-                    const first_lora_idx = 2; // model, clip, lora1, ..., layer_filter
+                    const first_lora_idx = 1; // model, lora1, ..., layer_filter
                     const last_input_idx = this.inputs.length - 1;
                     const layer_filter_idx = last_input_idx;
 
@@ -82,7 +82,7 @@ app.registerExtension({
                 // Check if the event type is 1 (input)
                 if (type !== 1) return;
 
-                const first_lora_idx = 2;
+                const first_lora_idx = 1;
                 const last_input_idx = this.inputs.length - 1;
 
                 // Ignore changes to model, clip, or layer_filter

@@ -11,15 +11,14 @@ class LoraPowerMergeLoader:
             "required": {
                 "lora_name": (folder_paths.get_filename_list("loras"),),
                 "strength_model": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
-                "strength_clip": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
             },
         }
 
-    RETURN_TYPES = ("LoRA",)
+    RETURN_TYPES = ("LoRABundle",)
     FUNCTION = "load_lora"
     CATEGORY = "LoRA PowerMerge"
 
-    def load_lora(self, lora_name, strength_model, strength_clip):
+    def load_lora(self, lora_name, strength_model):
         lora_path = folder_paths.get_full_path("loras", lora_name)
         lora_name_pretty = os.path.splitext(lora_name)[0]
 
@@ -27,5 +26,4 @@ class LoraPowerMergeLoader:
 
         return ({"lora_raw": lora,
                  "strength_model": strength_model,
-                 "strength_clip": strength_clip,
                  "name": lora_name_pretty},)
