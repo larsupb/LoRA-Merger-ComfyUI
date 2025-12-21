@@ -2,6 +2,7 @@ from .src.lora_apply import LoraApply
 from .src.lora_block_sampler import LoRABlockSampler
 from .src.lora_load import LoraPowerMergeLoader
 from .src.lora_mergekit_merge import LoraMergerMergekit, LoraDecompose, LoraStackFromDir, LoRASelect
+from .src.lora_parameter_sweep_sampler import LoRAParameterSweepSampler
 from .src.lora_power_stacker import LoraPowerStacker
 from .src.lora_resize import LoraResizer
 from .src.lora_save import LoraSave
@@ -25,6 +26,7 @@ NODE_CLASS_MAPPINGS = {
 
     "PM LoRA Block Sampler": LoRABlockSampler,
     "PM LoRA Stack Sampler": LoRAStackSampler,
+    "PM LoRA Parameter Sweep Sampler": LoRAParameterSweepSampler,
 
     "PM Slerp (Mergekit)": SLERPMergeMethod,
     "PM NuSlerp (Mergekit)": NuSlerpMergeMethod,
@@ -59,6 +61,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
     "PM LoRA Block Sampler": "PM LoRA Block Sampler",
     "PM LoRA Stack Sampler": "PM LoRA Stack Sampler",
+    "PM LoRA Parameter Sweep Sampler": "PM LoRA Parameter Sweep Sampler",
 
     "PM Slerp (Mergekit)": "PM Slerp (Mergekit)",
     "PM NuSlerp (Mergekit)": "PM NuSlerp (Mergekit)",

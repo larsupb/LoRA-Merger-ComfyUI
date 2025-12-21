@@ -2,76 +2,45 @@ import hashlib
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
-from typing import get_args, Dict, Protocol, Optional, Any, Set
-
 import torch
-from mergekit.architecture import WeightInfo
-from mergekit.common import ModelReference, ModelPath, ImmutableMap
-from mergekit.io.tasks import GatherTensors
-from mergekit.merge_methods import REGISTERED_MERGE_METHODS
-from mergekit.merge_methods.arcee_fusion import ArceeFusionMerge
-from mergekit.merge_methods.generalized_task_arithmetic import GTATask
-from mergekit.merge_methods.karcher import KarcherMerge
-from mergekit.merge_methods.linear import LinearMergeTask
-from mergekit.merge_methods.nearswap import nearswap_merge
-from mergekit.merge_methods.nuslerp import NuSlerpTask
-from mergekit.merge_methods.sce import sce_merge
-from mergekit.merge_methods.slerp import SlerpTask
-from mergekit.sparsify import RescaleNorm
 
 import comfy
 import comfy.model_management
 from comfy.weight_adapter import LoRAAdapter
-from .architectures import LORA_STACK, LORA_WEIGHTS
-from .architectures.sd_lora import LORA_TENSORS, LORA_TENSOR_DICT, LORA_TENSORS_BY_LAYER, weights_as_tuple, analyse_keys, calc_up_down_alphas
-from .mergekit_utils import MERGEKIT_GTA_MODES, load_on_device
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, Optional, Set
+from mergekit.architecture import WeightInfo
+from mergekit.common import ModelReference, ImmutableMap, ModelPath
+from mergekit.io.tasks import GatherTensors
+
+from .architectures.sd_lora import weights_as_tuple, analyse_keys, calc_up_down_alphas
+
+# Import merge module components
+from .merge import (
+    create_map,
+    create_tensor_param,
+    parse_layer_filter,
+    apply_layer_filter,
+    get_merge_method,
+    prepare_method_args,
+)
+from .mergekit_utils import load_on_device
+# Import centralized types
+from .types import (
+    LORA_STACK,
+    LORA_WEIGHTS,
+    LORA_TENSOR_DICT,
+    LORA_TENSORS_BY_LAYER,
+    MergeMethod,
+)
 from .utility import map_device, adjust_tensor_dims
-
-# Type aliases are now imported from architectures.sd_lora
-
-
-class MergeMethod(Protocol):
-    def __call__(
-            *,
-            tensors: Dict[ModelReference, torch.Tensor],
-            gather_tensors: GatherTensors,
-            weight_info: WeightInfo,
-            tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-            method_args: Optional[Dict] = ...,
-    ) -> torch.Tensor: ...
+# Import validation components
+from .validation import validate_tensor_shapes_compatible
 
 
-def create_map(key, tensors, dtype):
-    return (ImmutableMap({
-        r: WeightInfo(name=f'model{i}.{key}', dtype=dtype) for i, r in enumerate(tensors.keys())
-    }))
-
-
-def create_tensor_param(tensor_weight, method_args: Dict) -> Dict:
-    out = {"weight": tensor_weight}
-    out.update(method_args)
-    return out
-
-
-def parse_layer_filter(layer_filter):
-    # Set filter on SD LoRA layers
-    if layer_filter == "full":
-        layer_filter = None
-    elif layer_filter == "attn-mlp":
-        layer_filter = {"attn1", "attn2", "ff"}
-    elif layer_filter == "attn-only":
-        layer_filter = {"attn1", "attn2"}
-    return layer_filter
-
-
-def apply_layer_filter(patch_dict, layer_filter):
-    num_keys = len(patch_dict.keys())
-    if layer_filter:
-        patch_dict = {k0: v0 for k0, v0 in patch_dict.items() if any(layer in k0 for layer in layer_filter)}
-    print(f"Stacking {len(patch_dict)} keys with {num_keys - len(patch_dict)} "
-          f"filtered out by filter method {layer_filter}.")
-    return patch_dict
+# Helper functions moved to src/merge/utils.py
+# Imported above for backward compatibility
 
 
 class LoraStackFromDir:
@@ -93,13 +62,13 @@ class LoraStackFromDir:
             },
         }
 
-    RETURN_TYPES = ("LoRAStack", "LoRAWeights",)
+    RETURN_TYPES = ("LoRAStack", "LoRAWeights", "LoRARawDict",)
     FUNCTION = "stack_loras"
     CATEGORY = "LoRA PowerMerge"
     DESCRIPTION = "Stacks LoRA weights from the given directory and applies them to the model."
 
     def stack_loras(self, model, directory, layer_filter=None, sort_by: str = None, limit: int = 0) -> \
-            (LORA_STACK, LORA_WEIGHTS):
+            (LORA_STACK, LORA_WEIGHTS, dict):
         # check if directory exists
         if not os.path.isdir(directory):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
@@ -113,6 +82,7 @@ class LoraStackFromDir:
         # Load LoRAs and patch key names
         lora_patch_dicts = {}
         lora_strengths = {}
+        lora_raw_dicts = {}  # Store raw LoRA state dicts for CLIP weights
 
         # Load LoRAs from the directory
         # walk over files in the directory
@@ -141,13 +111,15 @@ class LoraStackFromDir:
                     lora_strengths[lora_name] = {
                         'strength_model': 1.0,  # Default strength
                     }
+                    lora_raw_dicts[lora_name] = lora_raw  # Store raw state dict
 
-        return lora_patch_dicts, lora_strengths,
+        return lora_patch_dicts, lora_strengths, lora_raw_dicts,
 
 
 class LoRASelect:
     """
-    Select one LoRA out of a LoRAKeyDicts Object by its index.
+    Select one LoRA out of a LoRAStack by its index.
+    Optionally accepts raw LoRA dict to preserve CLIP weights.
     """
     @classmethod
     def INPUT_TYPES(s):
@@ -156,21 +128,33 @@ class LoRASelect:
                 "key_dicts": ("LoRAStack",),
                 "index": ("INT", {"default": 0, "min": 0, "max": 1000, "tooltip": "Index of the LoRA to select."}),
             },
+            "optional": {
+                "lora_raw_dict": ("LoRARawDict", {"tooltip": "Optional raw LoRA dict to preserve CLIP weights"}),
+            },
         }
 
     RETURN_TYPES = ("LoRABundle",)
     FUNCTION = "select_lora"
     CATEGORY = "LoRA PowerMerge"
+    DESCRIPTION = "Select one LoRA from stack by index. Preserves CLIP weights if raw dict is provided."
 
-    def select_lora(self, key_dicts: LORA_STACK, index: int) -> (LORA_STACK,):
+    def select_lora(self, key_dicts: LORA_STACK, index: int, lora_raw_dict: dict = None) -> (dict,):
         keys = list(key_dicts.keys())
         if index < 0 or index >= len(keys):
-            raise IndexError(f"Index {index} out of range for LoRAKeyDict with {len(keys)} items.")
+            raise IndexError(f"Index {index} out of range for LoRAStack with {len(keys)} items.")
         selected_key = keys[index]
 
-        return ({"lora": key_dicts[selected_key],
-                 "strength_model": 1,
-                 "name": selected_key},)
+        bundle = {
+            "lora": key_dicts[selected_key],
+            "strength_model": 1.0,
+            "name": selected_key
+        }
+
+        # Add raw LoRA data if available (for preserving CLIP weights)
+        if lora_raw_dict is not None and selected_key in lora_raw_dict:
+            bundle["lora_raw"] = lora_raw_dict[selected_key]
+
+        return (bundle,)
 
 
 class LoraDecompose:
@@ -226,12 +210,23 @@ class LoraDecompose:
     RETURN_TYPES = ("LoRATensors",)
     FUNCTION = "lora_decompose"
     CATEGORY = "LoRA PowerMerge"
+    DESCRIPTION = """Decomposes LoRA stack into tensor components for merging.
+
+Extracts (up, down, alpha) tuples from each LoRA layer and handles rank mismatches using SVD-based decomposition methods.
+
+Decomposition Methods:
+- none: Requires all LoRAs to have matching ranks (fastest, fails if ranks differ)
+- rSVD: Randomized SVD for rank reconciliation (fast, recommended for most cases)
+- energy_rSVD: Energy-based randomized SVD (best for DiT/large LoRAs)
+- SVD: Full SVD decomposition (slow but optimal)
+
+Features hash-based caching to skip recomputation when inputs haven't changed."""
 
     def lora_decompose(self, key_dicts: LORA_STACK = None,
                        decomposition_method="rSVD", svd_rank=-1, device=None):
         device, _ = map_device(device, "float32")
 
-        print("Decomposing LoRAs with method:", decomposition_method, "and SVD rank:", svd_rank)
+        logging.info(f"Decomposing LoRAs with method: {decomposition_method}, SVD rank: {svd_rank}")
 
         # check if key_dicts differs from the previous one
         lora_names_hash_new = self.compute_hash(list(key_dicts.keys()))
@@ -320,7 +315,7 @@ class LoraDecompose:
             out[key] = process_key(key)
             pbar.update(1)
 
-        print(f"Processed {len(keys)} keys in {time.time() - start:.2f} seconds")
+        logging.info(f"Processed {len(keys)} keys in {time.time() - start:.2f} seconds")
 
         torch.cuda.empty_cache()
 
@@ -355,9 +350,23 @@ class LoraMergerMergekit:
             },
         }
 
-    RETURN_TYPES = ("LoRABundle",)
+    RETURN_TYPES = ("LoRABundle", "MergeContext")
+    RETURN_NAMES = ("lora", "merge_context")
     FUNCTION = "lora_mergekit"
     CATEGORY = "LoRA PowerMerge"
+    DESCRIPTION = """Core LoRA merger using Mergekit algorithms.
+
+Merges decomposed LoRA components using the selected merge method (TIES, DARE, SLERP, etc.). Processes layers in parallel using ThreadPoolExecutor for performance.
+
+Inputs:
+- method: Merge algorithm configuration from method nodes
+- components: Decomposed LoRA tensors from LoRA Decompose node
+- strengths: Per-LoRA weight multipliers (strength_model for UNet, strength_clip for CLIP)
+- lambda_: Global scaling factor applied to final merged result (0-1)
+
+Outputs:
+- LoRABundle: Merged LoRA ready for application or saving
+- MergeContext: Reusable merge configuration for batch operations"""
 
     @torch.no_grad()
     def lora_mergekit(self,
@@ -375,32 +384,11 @@ class LoraMergerMergekit:
 
         device, dtype = map_device(device, dtype)
 
-        if method['name'] == "linear":
-            merge_method = linear_merge
-        elif method['name'] == "nearswap":
-            merge_method = nearswap_merge_
-        elif method['name'] == "slerp":
-            merge_method = slerp_merge
-        elif method['name'] == "nuslerp":
-            merge_method = nuslerp_merge
-        elif method['name'] == "sce":
-            merge_method = sce
-        elif method['name'] == "karcher":
-            merge_method = kArcher
-        elif method['name'] == "arcee_fusion":
-            merge_method = arcee_fusion
-        elif method['name'] in get_args(MERGEKIT_GTA_MODES):
-            merge_method = generalized_task_arithmetic_merge
-        else:
-            raise Exception(f"Invalid / unsupported method {method['name']}")
+        # Use dispatcher to get merge method
+        merge_method = get_merge_method(method['name'])
 
-        method_args = {
-            "mode": method['name'],
-            "int8_mask": False,
-            "lambda_": 1.0,  # This is for internal GTA processing -> but since we want to apply lambda_ to every merge method, we use it afterward
-        }
-        # update method_args with dictionary method['settings']
-        method_args.update(method['settings'])
+        # Prepare method arguments
+        method_args = prepare_method_args(method['name'], method['settings'])
 
         self.validate_input()
 
@@ -409,7 +397,17 @@ class LoraMergerMergekit:
         # Clean up VRAM
         torch.cuda.empty_cache()
 
-        return merge
+        # Create merge context for downstream nodes
+        merge_context = {
+            "method": method,
+            "components": components,
+            "strengths": strengths,
+            "lambda_": lambda_,
+            "device": device,
+            "dtype": dtype
+        }
+
+        return merge + (merge_context,)
 
     def merge(self, method: MergeMethod, method_args, lambda_, device, dtype):
         pbar = comfy.utils.ProgressBar(len(self.components.keys()))
@@ -502,258 +500,75 @@ class LoraMergerMergekit:
                                                           loaded_keys=set(keys))
                 pbar.update(1)
 
-        print(f"Processed {len(keys)} keys in {time.time() - start:.2f} seconds")
+        logging.info(f"Processed {len(keys)} keys in {time.time() - start:.2f} seconds")
 
         lora_out = {"lora": adapter_state_dict, "strength_model": 1, "name": "Merge"}
         return (lora_out,)
 
     def validate_input(self):
-        pass
-        #if len(self.loras) < 2:
-        #   raise Exception("At least two LoRAs are required for merge.")
-        # dims = [find_network_dim(lora['lora']) for lora in self.loras]
-        # if min(dims) != max(dims):
-        #     raise Exception("LoRAs with different ranks not allowed in LoraMerger. Use SVD merge.")
+        """
+        Validate input parameters for merge operation.
+
+        Performs comprehensive validation of:
+        - Component tensors (shapes, compatibility)
+        - Strength values (presence, reasonable ranges)
+
+        Logs warnings for potential issues and raises exceptions for
+        critical errors that would cause merge to fail.
+
+        Raises:
+            ValueError: If critical validation errors are found
+        """
+        errors = []
+        warnings = []
+
+        # Validate components exist and are not empty
+        if not self.components:
+            raise ValueError("No components provided for merging")
+
+        if len(self.components) == 0:
+            raise ValueError("Components dictionary is empty")
+
+        # Validate strengths exist
+        if not self.strengths:
+            raise ValueError("No strengths provided for merging")
+
+        # Validate tensor shapes are compatible
+        validation_result = validate_tensor_shapes_compatible(self.components)
+
+        # Log validation warnings
+        for warning in validation_result["warnings"]:
+            logging.warning(f"Validation warning: {warning}")
+            warnings.append(warning)
+
+        # Collect validation errors
+        for error in validation_result["errors"]:
+            error_msg = f"{error['code']}: {error['message']}"
+            if error.get('location'):
+                error_msg += f" (at {error['location']})"
+            errors.append(error_msg)
+            logging.error(f"Validation error: {error_msg}")
+
+        # Validate all LoRAs in components have corresponding strengths
+        lora_names = set()
+        for layer_tensors in self.components.values():
+            lora_names.update(layer_tensors.keys())
+
+        for lora_name in lora_names:
+            if lora_name not in self.strengths:
+                error_msg = f"Missing strength for LoRA '{lora_name}'"
+                errors.append(error_msg)
+                logging.error(f"Validation error: {error_msg}")
+
+        # Raise exception if critical errors found
+        if errors:
+            error_summary = "\n".join(f"  - {e}" for e in errors)
+            raise ValueError(
+                f"Validation failed with {len(errors)} error(s):\n{error_summary}"
+            )
 
 
-def generalized_task_arithmetic_merge(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-) -> torch.Tensor:
-    # Tell GTA what method to use exactly
-    mode = method_args['mode']
-    if mode == "dare":
-        mode = "dare_ties" if method_args['sign_consensus_algorithm'] else "dare_linear"
-    elif mode == "breadcrumbs" and method_args['sign_consensus_algorithm']:
-        mode = "breadcrumbs_ties"
-    elif mode == "della" and not method_args['sign_consensus_algorithm']:
-        mode = "della_linear"
-
-    # Merge LoRA tensors using task arithmetic method.
-    method = REGISTERED_MERGE_METHODS.get(mode)
-
-    # Add full zeros tensor to the tensors and set it as base tensor
-    # This is a dummy tensor (zeros) that will have no effect on the merge
-    # Model Reference and zero tensor are created
-    zeros_tensor = torch.zeros_like(list(tensors.values())[0])
-    base_model_ref = ModelReference(model=ModelPath(path='zeros.base'))
-    tensors[base_model_ref] = zeros_tensor
-    # Extends TensorParameters is a dictionary of tensors and their weights
-    map = {base_model_ref: ImmutableMap(create_tensor_param(zeros_tensor, method_args))}
-    # Add the base tensor to the weight info
-    for k, v in tensor_parameters.items():
-        map[k] = v
-    tensor_parameters = ImmutableMap(map)
-
-    rescale_norm = method_args["rescale_norm"]
-    if rescale_norm == "default":
-        rescale_norm = RescaleNorm.l1 \
-            if getattr(method, "default_rescale") else None
-    task = GTATask(
-        method=method,
-        tensors=gather_tensors,
-        base_model=base_model_ref,
-        weight_info=weight_info,
-        gather_tensors=gather_tensors,
-        tensor_parameters=tensor_parameters,
-        int8_mask=method_args['int8_mask'],
-        normalize=method_args['normalize'],
-        lambda_=method_args['lambda_'],
-        rescale_norm=rescale_norm
-    )
-    return task.execute(tensors=tensors)
-
-
-def linear_merge(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-
-) -> torch.Tensor:
-    # Merge LoRA tensors using linear method.
-    task = LinearMergeTask(
-        gather_tensors=gather_tensors,
-        tensor_parameters=tensor_parameters,
-        normalize=method_args['normalize'],
-        weight_info=weight_info,
-    )
-    return task.execute(tensors=tensors)
-
-
-def sce(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-) -> torch.Tensor:
-    first_tensor = next(iter(tensors.values()))
-
-    # Apply weight to each tensor
-    weighted_tensors = []
-    for ref in tensors.keys():
-        weight = tensor_parameters[ref]["weight"]
-        weighted_tensor = weight * tensors[ref]
-        weighted_tensors.append(weighted_tensor)
-
-    # Add full zeros tensor to the tensors and set it as base tensor
-    # This is a dummy tensor (zeros) that will have no effect on the merge
-    zeros_tensor = torch.zeros_like(first_tensor)
-
-    # Debug: log tensor shapes before merge
-    input_shape = first_tensor.shape
-    logging.debug(f"SCE merge for {weight_info.name}: input shape = {input_shape}, num_tensors = {len(weighted_tensors)}")
-
-    # Call sce_merge with proper error handling
-    try:
-        result = sce_merge(
-            tensors=weighted_tensors,
-            base_tensor=zeros_tensor,
-            int8_mask=method_args.get('int8_mask', False),
-            select_topk=method_args.get('select_topk', 1.0)
-        )
-    except Exception as e:
-        logging.error(f"SCE merge failed for {weight_info.name}: {e}")
-        raise
-
-    # Apply lambda scaling
-    result = result * method_args.get('lambda_', 1.0)
-
-    # Verify output shape matches input shape
-    if result.shape != input_shape:
-        logging.error(f"SCE merge SHAPE MISMATCH for {weight_info.name}: input {input_shape} -> output {result.shape}")
-        raise RuntimeError(f"SCE merge produced wrong output shape for {weight_info.name}: expected {input_shape}, got {result.shape}")
-
-    return result
-
-
-def kArcher(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-) -> torch.Tensor:
-    # Apply strength weights to the tensors before computing Karcher mean
-    # Karcher uses equal weights internally, so we pre-scale the tensors
-    weighted_tensors = {}
-    for ref in tensors.keys():
-        weight = tensor_parameters[ref]["weight"]
-        weighted_tensors[ref] = weight * tensors[ref]
-
-    merge = KarcherMerge()
-    task = merge.make_task(
-        output_weight=weight_info,
-        tensors=gather_tensors,
-        base_model=None,  # We do not provide a KArcher base model for LoRA merging here
-        parameters=ImmutableMap({
-            "max_iter": method_args.get("max_iter", 10),
-            "tol": method_args.get("tol", 1e-5)
-        }),
-        tensor_parameters=tensor_parameters,
-    )
-    return task.execute(tensors=weighted_tensors) * method_args['lambda_']
-
-
-def slerp_merge(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-) -> torch.Tensor:
-    # SLERP interpolates between exactly two models
-    # Apply strength weights to the tensors before interpolation
-    weighted_tensors = {}
-    for ref in tensors.keys():
-        weight = tensor_parameters[ref]["weight"]
-        weighted_tensors[ref] = weight * tensors[ref]
-
-    first_model_ref = list(weighted_tensors.keys())[0]
-
-    task = SlerpTask(gather_tensors=gather_tensors, base_model=first_model_ref,
-                     weight_info=weight_info, t=method_args['t'])
-    return task.execute(tensors=weighted_tensors) * method_args['lambda_']
-
-
-def nuslerp_merge(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-) -> torch.Tensor:
-    # Ensure all tensors are contiguous - required for .view() operations in NuSLERP
-    contiguous_tensors = {k: v.contiguous() for k, v in tensors.items()}
-
-    task = NuSlerpTask(gather_tensors=gather_tensors, tensor_parameters=tensor_parameters, weight_info=weight_info,
-                       row_wise=method_args['nuslerp_row_wise'], flatten=method_args['nuslerp_flatten'],
-                       base_model=None)
-    return task.execute(tensors=contiguous_tensors) * method_args['lambda_']
-
-
-def nearswap_merge_(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-) -> torch.Tensor:
-    method_args = method_args or {}
-
-    # Apply strength weights to the tensors
-    weighted_tensors = {}
-    for ref in tensors.keys():
-        weight = tensor_parameters[ref]["weight"]
-        weighted_tensors[ref] = weight * tensors[ref]
-
-    # take the first tensor as base tensor
-    first_model_ref = list(weighted_tensors.keys())[0]
-    first_model = weighted_tensors.pop(first_model_ref)
-    # check that there is only one tensor left
-    if len(weighted_tensors) != 1:
-        raise RuntimeError("NearSwap merge expects exactly two models")
-    second_model = list(weighted_tensors.values())  # Must be length 1
-
-    divisor = 1
-    if method_args['normalize']:
-        divisor = torch.tensor(2.)
-        divisor[divisor.abs() < 1e-8] = 1
-
-    return nearswap_merge(
-        base_tensor=first_model,
-        tensors=second_model,
-        t=method_args.get('similarity_threshold', 0.001)
-    ) * method_args['lambda_'] / divisor
-
-
-def arcee_fusion(
-        tensors: Dict[ModelReference, torch.Tensor],
-        gather_tensors: GatherTensors,
-        weight_info: WeightInfo,
-        tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = ...,
-        method_args: Optional[Dict] = ...,
-) -> torch.Tensor:
-    # Apply strength weights to the tensors
-    weighted_tensors = {}
-    for ref in tensors.keys():
-        weight = tensor_parameters[ref]["weight"]
-        weighted_tensors[ref] = weight * tensors[ref]
-
-    # take the first tensor as base tensor
-    first_model = list(weighted_tensors.keys())[0]
-
-    merge = ArceeFusionMerge()
-    task = merge.make_task(
-        output_weight=weight_info,
-        tensors=gather_tensors,
-        base_model=first_model,
-    )
-    return task.execute(
-        tensors=weighted_tensors,
-    ) * method_args['lambda_']
+# ============================================================================
+# Algorithm implementations moved to src/merge/algorithms.py
+# The functions below have been extracted to the merge module for better organization
+# ============================================================================

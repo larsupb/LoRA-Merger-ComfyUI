@@ -117,6 +117,15 @@ class LoraPowerStacker:
 
     NAME = "PM LoRA Power Stacker"
     CATEGORY = "LoRA PowerMerge"
+    DESCRIPTION = """Widget-based LoRA stacker for PowerMerge workflow.
+
+Outputs:
+- LoRAStack: Processed model weights (filtered by layer_filter)
+- LoRAWeights: Strength metadata for each LoRA
+- LoRARawDict: Original raw state dicts (preserves CLIP weights)
+- CLIP: Modified CLIP model with all LoRAs applied
+
+Use the widget to add/remove LoRAs dynamically. Connect LoRARawDict to LoRA Select to preserve CLIP weights when saving merged LoRAs."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -129,8 +138,8 @@ class LoraPowerStacker:
             "hidden": {},
         }
 
-    RETURN_TYPES = ("LoRAStack", "LoRAWeights", "CLIP")
-    RETURN_NAMES = ("LoRAStack", "LoRAWeights", "CLIP")
+    RETURN_TYPES = ("LoRAStack", "LoRAWeights", "LoRARawDict", "CLIP")
+    RETURN_NAMES = ("LoRAStack", "LoRAWeights", "LoRARawDict", "CLIP")
     FUNCTION = "stack_loras_widget"
 
     def stack_loras_widget(self, model, clip, **kwargs):
@@ -148,6 +157,7 @@ class LoraPowerStacker:
         # Initialize outputs
         lora_patch_dicts = {}
         lora_strengths = {}
+        lora_raw_dicts = {}  # Store raw LoRA state dicts for CLIP weights
 
         # Track how many LoRAs were loaded
         loaded_count = 0
@@ -207,6 +217,7 @@ class LoraPowerStacker:
                     lora_strengths[lora_name_pretty] = {
                         'strength_model': strength_model,
                     }
+                    lora_raw_dicts[lora_name_pretty] = lora_raw  # Store raw state dict
 
                     # Apply to CLIP
                     # Note: We need a dummy model for LoraLoader, but we only care about CLIP output
@@ -221,4 +232,4 @@ class LoraPowerStacker:
 
         print(f"[{self.NAME}] Loaded {loaded_count} LoRAs")
 
-        return (lora_patch_dicts, lora_strengths, clip)
+        return (lora_patch_dicts, lora_strengths, lora_raw_dicts, clip)

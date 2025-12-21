@@ -10,8 +10,7 @@ from comfy_extras.nodes_custom_sampler import SamplerCustom
 
 from .comfy_util import load_as_comfy_lora
 from .architectures import sd_lora, dit_lora
-
-FONTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
+from .utility import FONTS_DIR
 
 
 class LoRABlockSampler:

@@ -1,15 +1,25 @@
 import logging
 import os
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
 
 import torch
 from PIL import ImageFont
 
-from .architectures.sd_lora import LORA_TENSORS
+from .types import LORA_TENSORS, DeviceType, DtypeType, MIN_SINGULAR_VALUE
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
 
-def map_device(device, dtype):
+def map_device(device: DeviceType, dtype: DtypeType) -> Tuple[torch.device, torch.dtype]:
+    """
+    Convert device and dtype from string representation to torch objects.
+
+    Args:
+        device: Device specification as string or torch.device
+        dtype: Data type specification as string or torch.dtype
+
+    Returns:
+        Tuple of (torch.device, torch.dtype)
+    """
     if isinstance(device, str):
         device = torch.device(device)
     if isinstance(dtype, str):
@@ -17,7 +27,16 @@ def map_device(device, dtype):
     return device, dtype
 
 
-def find_network_dim(lora_sd: dict):
+def find_network_dim(lora_sd: Dict[str, torch.Tensor]) -> Optional[int]:
+    """
+    Find the network dimension (rank) of a LoRA from its state dict.
+
+    Args:
+        lora_sd: LoRA state dictionary
+
+    Returns:
+        Network dimension (rank) or None if not found
+    """
     network_dim = None
     for key, value in lora_sd.items():
         if network_dim is None and 'lora_down' in key and len(value.size()) == 2:
@@ -25,15 +44,26 @@ def find_network_dim(lora_sd: dict):
     return network_dim
 
 
-def adjust_tensor_dims(ups_downs_alphas: Dict[str, LORA_TENSORS], apply_svd=False, svd_rank=-1, method='rSVD') -> Dict[
-    str, LORA_TENSORS]:
+def adjust_tensor_dims(
+    ups_downs_alphas: Dict[str, LORA_TENSORS],
+    apply_svd: bool = False,
+    svd_rank: int = -1,
+    method: str = 'rSVD'
+) -> Dict[str, LORA_TENSORS]:
     """
-    Checks if tensor dimensions and eventually aligns them to the first tensor with SVD or QR
+    Checks if tensor dimensions and eventually aligns them to the first tensor with SVD or QR.
+
     Args:
-        ups_downs_alphas (list): List of tuples containing up, down tensors and alpha values.
-        apply_svd (bool): Whether to apply SVD/QR for dimension adjustment.
-        svd_rank (int): Rank for adjustment. If -1, uses the rank of the first tensor.
-        method (str): Method to use for dimension adjustment: 'svd' (default) or 'qr' (faster).
+        ups_downs_alphas: Dictionary mapping LoRA names to (up, down, alpha) tuples
+        apply_svd: Whether to apply SVD/QR for dimension adjustment
+        svd_rank: Target rank for adjustment. If -1, uses the rank of the first tensor
+        method: Method to use for dimension adjustment: 'rSVD', 'SVD', or 'QR'
+
+    Returns:
+        Dictionary with aligned tensor dimensions
+
+    Raises:
+        ValueError: If dimensions don't match and apply_svd is False
     """
     up_0, up_1, _ = next(iter(ups_downs_alphas.values()))
     target_rank = up_0.shape[1] if svd_rank == -1 else svd_rank

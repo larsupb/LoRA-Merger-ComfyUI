@@ -1,8 +1,10 @@
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
+
+from ..types import DiTBlockNameInfo
 
 
-def detect_block_names(layer_key, layers_per_group: int = 5) -> Optional[Dict[str, Any]]:
+def detect_block_names(layer_key: str, layers_per_group: int = 5) -> Optional[DiTBlockNameInfo]:
     """
     Detect block names for DiT (Diffusion Transformer) architecture.
 

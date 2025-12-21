@@ -1,4 +1,26 @@
-class LinearMergeMethod:
+from .merge import BaseMergeMethodNode
+
+
+class LinearMergeMethod(BaseMergeMethodNode):
+    """
+    Linear merge method node.
+
+    Concept: Computes a simple weighted average of the parameters from the input models.
+    This is one of the most basic and widely used merging techniques.
+
+    Use Cases:
+    - Averaging multiple checkpoints of the same fine-tuning run ("model soups")
+    - Combining models with very similar architectures and training data
+    - Simple ensemble-like behavior in a single model
+
+    Inputs: Takes 2 or more models. No base_model is typically used.
+
+    Key Parameters:
+    - weight (per-model): The contribution of each model to the average
+    - normalize (global): If true (default), weights are normalized to sum to 1
+    """
+
+    METHOD_NAME = "linear"
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -10,37 +32,56 @@ class LinearMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("MergeMethod",)
-    FUNCTION = "get_method"
-    CATEGORY = "LoRA PowerMerge"
-    DESCRIPTION = """
-    Concept: Computes a simple weighted average of the parameters from the input models. This is one of the most
-    basic and widely used merging techniques.
+    def get_settings(self, normalize: bool = True):
+        return {"normalize": normalize}
+
+
+class SCEMergeMethod(BaseMergeMethodNode):
+    """
+    SCE (Select, Calculate, Erase) merge method node.
+
+    Concept: The SCE method performs adaptive matrix-level merging.
+    It first computes task vectors (differences from the base_model). Then, it follows
+    a three-step process for each parameter matrix (tensor):
+
+    1. Select (Variance-Based Masking): Optionally, parameter positions that show low
+       variance across the different models' task vectors are identified and zeroed out.
+       This is controlled by the select_topk parameter.
+
+    2. Calculate (Weighting): Matrix-level merging coefficients (weights) are calculated
+       for each model's task vector.
+
+    3. Erase (Sign Consensus): The sign-consensus algorithm from TIES is applied to the
+       task vectors.
 
     Use Cases:
-    
-    Averaging multiple checkpoints of the same fine-tuning run ("model soups")
-    Combining models with very similar architectures and training data
-    Simple ensemble-like behavior in a single model
-    Inputs: Takes 2 or more models. No base_model is typically used.
-    
+    - Dynamically weighting the contribution of different models at the matrix level
+    - Useful when some models contribute more significantly to certain parameter matrices
+    - Merging models by focusing on high-variance, consistently signed changes
+
+    Inputs: Requires 2 or more models, plus one base_model.
+
     Key Parameters:
-    
-    weight (per-model): The contribution of each model to the average
-    normalize (global): If true (default), weights are normalized to sum to 1
+    - select_topk (global): The fraction of parameter positions to retain based on their
+      variance values across the different input models' task vectors.
     """
 
-    def get_method(self, normalize: bool = 0.5):
-        method_def = {
-            "name": "linear",
-            "settings": {
-                "normalize": normalize,
-            }
-        }
-        return (method_def,)
+    METHOD_NAME = "sce"
+    CATEGORY = "LoRA PowerMerge/Task Arithmetic"
+    DESCRIPTION = """SCE (Select, Calculate, Erase) adaptive merge method.
 
+Three-stage merge process:
+1. SELECT: Variance-based masking - zeros out low-variance parameters (select_topk controls retention)
+2. CALCULATE: Matrix-level weight computation for each LoRA
+3. ERASE: Sign consensus algorithm (from TIES) to eliminate conflicting changes
 
-class SCEMergeMethod:
+Best for: Merging models where different LoRAs contribute to different parameter matrices. Dynamically weights contributions based on variance and sign consensus.
+
+Parameters:
+- select_topk: Fraction of highest-variance elements to retain (0.1 = keep top 10%)
+
+Requires: 2+ LoRAs plus base model"""
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -55,51 +96,8 @@ class SCEMergeMethod:
             },
         }
 
-    RETURN_TYPES = ("MergeMethod",)
-    FUNCTION = "get_method"
-    CATEGORY = "LoRA PowerMerge/Task Arithmetic"
-    DESCRIPTION = """
-    SCE (sce)
-    Concept: The SCE (Select, Calculate, Erase) method performs adaptive matrix-level merging. 
-    It first computes task vectors (differences from the base_model). Then, it follows a three-step process 
-    for each parameter matrix (tensor):
-
-    Select (Variance-Based Masking): Optionally, parameter positions that show low variance across the different 
-    models' task vectors are identified and zeroed out. This is controlled by the select_topk parameter. 
-    If select_topk < 1.0, only the top select_topk fraction of parameter positions with the highest variance are 
-    kept active in the task vectors for subsequent steps.
-    Calculate (Weighting): Matrix-level merging coefficients (weights) are calculated for each model's task vector. 
-    These weights are derived from the mean of the squares of the elements within each task vector and are 
-    normalized across the models.
-    Erase (Sign Consensus): The sign-consensus algorithm from TIES is applied to the task vectors.
-    Finally, the (variance-selected, calculated-weighted, and sign-agreed) task vectors are summed together, 
-    normalized by the sum of the effective applied weights at each position, and then added back to the base_model.
-
-    Use Cases:
-    Dynamically weighting the contribution of different models at the matrix level based on parameter variance 
-    and calculated importance.
-    Useful when some models contribute more significantly or consistently to certain parameter matrices than others
-    Merging models by focusing on high-variance, consistently signed changes
-    Inputs: Requires 2 or more models, plus one base_model.
-
-    Key Parameters:
-
-    select_topk (global): The fraction of parameter positions to retain based on their variance values across the 
-    different input models' task vectors. For each parameter position, variance is calculated across all task vectors. 
-    Only positions corresponding to the select_topk fraction with the highest variances are kept (i.e., their values 
-    in all task vectors are preserved for the next steps). Positions with lower variance are zeroed out in all task 
-    vectors. Set to 1.0 (default) to disable this variance-based selection step. This corresponds to τ (tau) 
-    in the reference paper.
-    """
-
-    def get_method(self, select_topk: float = .1):
-        method_def = {
-            "name": "sce",
-            "settings": {
-                "select_topk": select_topk,
-            }
-        }
-        return (method_def,)
+    def get_settings(self, select_topk: float = 0.1):
+        return {"select_topk": select_topk}
 
 
 class TaskArithmeticMergeMethod:
@@ -120,19 +118,19 @@ class TaskArithmeticMergeMethod:
     FUNCTION = "get_method"
     CATEGORY = "LoRA PowerMerge/Task Arithmetic"
     DESCRIPTION = """
-    Concept: Computes "task vectors" for each model by subtracting a base_model. 
-    These task vectors are then combined as a weighted average and added back to the base_model.
+Concept: Computes "task vectors" for each model by subtracting a base_model. 
+These task vectors are then combined as a weighted average and added back to the base_model.
 
-    Use Cases:    
-    Combining skills from multiple models fine-tuned from a common ancestor
-    Transferring specific capabilities (e.g., coding ability, instruction following) from one model to another
-    Steering style or behavior of a model by adding small task vectors from other models
-    Inputs: Requires a base_model and one or more other models.
-    
-    Key Parameters:    
-    - weight (per-model): Weight for each model's task vector in the merge
-    - lambda (global): Scaling factor applied to the summed task vectors before adding back to the base. Default 1.0
-    """
+Use Cases:    
+Combining skills from multiple models fine-tuned from a common ancestor
+Transferring specific capabilities (e.g., coding ability, instruction following) from one model to another
+Steering style or behavior of a model by adding small task vectors from other models
+Inputs: Requires a base_model and one or more other models.
+
+Key Parameters:    
+- weight (per-model): Weight for each model's task vector in the merge
+- lambda (global): Scaling factor applied to the summed task vectors before adding back to the base. Default 1.0
+"""
 
     def get_method(self, rescale_norm: str = "default", normalize: bool = 0.5, ):
         method_def = {
@@ -624,7 +622,6 @@ class NearSwapMergeMethod:
     the interpolation is stronger, and when they are different, it is weaker.
 
     Use Cases:
-
     Selectively pulling in similar parameters from a secondary model while preserving different parameters from the 
     base model
     Fine-grained parameter-wise merging that respects the existing structure of the base model

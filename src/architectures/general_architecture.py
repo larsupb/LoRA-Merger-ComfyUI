@@ -1,7 +1,9 @@
-from typing import Dict
+# Re-export types from centralized types module
+# This module maintains backward compatibility for existing imports
+from ..types import (
+    LORA_KEY_DICT,
+    LORA_STACK,
+    LORA_WEIGHTS,
+)
 
-from comfy.weight_adapter import LoRAAdapter
-
-LORA_KEY_DICT = Dict[str, LoRAAdapter]    # Key -> (lora type, (up, down, alpha, None, None, None))
-LORA_STACK = Dict[str, LORA_KEY_DICT]                # LoRA name -> LoRA key dict
-LORA_WEIGHTS = Dict[str, Dict[str, float]]
+__all__ = ['LORA_KEY_DICT', 'LORA_STACK', 'LORA_WEIGHTS']

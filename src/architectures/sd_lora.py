@@ -1,19 +1,19 @@
+import logging
 import math
 import re
-from typing import List, Tuple, Dict, Set
-
-from torch import Tensor
+from typing import List, Set, Dict
 
 import comfy
 import torch
-
 from comfy.model_patcher import ModelPatcher
-from .general_architecture import LORA_STACK, LORA_KEY_DICT
+from torch import Tensor
 
-SD_LORA_ALPHA_IDX = 2
-LORA_TENSORS = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-LORA_TENSOR_DICT = Dict[str, LORA_TENSORS]
-LORA_TENSORS_BY_LAYER = Dict[str, LORA_TENSOR_DICT]
+from ..types import (
+    LORA_STACK,
+    LORA_KEY_DICT,
+    LORA_TENSOR_DICT,
+    BlockNameInfo,
+)
 
 
 def weights_as_tuple(up: torch.Tensor, down: torch.Tensor, alpha: torch.Tensor):
@@ -27,14 +27,18 @@ def analyse_keys(loras: LORA_STACK) -> Set[str]:
         for key in lora.keys():
             keys.add(key)
             key_count += 1
-        print(f"LoRA {i} with {key_count} modules.")
+        logging.debug(f"LoRA {i} with {key_count} modules.")
 
-    print(f"Total keys to be merged {len(keys)} modules")
+    logging.info(f"Total keys to be merged: {len(keys)} modules")
     return keys
 
 
-def calc_up_down_alphas(loras_lora_key_dict: LORA_STACK, key,
-                        load_device=None, scale_to_alpha_0=False) -> LORA_TENSOR_DICT:
+def calc_up_down_alphas(
+    loras_lora_key_dict: LORA_STACK,
+    key: str,
+    load_device: torch.device = None,
+    scale_to_alpha_0: bool = False
+) -> LORA_TENSOR_DICT:
     """
        Calculate up, down tensors and alphas for a given key.
 
@@ -121,26 +125,49 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
         lora_type: str = lora_settings.name
         lora_data: List[Tensor] = lora_settings.weights
         if lora_type == "lora":
-            out_key = diffusers_map[sd_key]
+            # ComfyUI uses tuple keys - convert to string if needed
+            key_str = sd_key[0] if isinstance(sd_key, tuple) else sd_key
 
-            up, down, alpha, mid, dora_scale, reshape = lora_data
-            up_key = "{}.lora_up.weight".format(out_key)
-            down_key = "{}.lora_down.weight".format(out_key)
-            alpha_key = "{}.alpha".format(out_key)
+            # Check if this is a DiT architecture key (doesn't need conversion)
+            # DiT keys look like: diffusion_model.layers.X.feed_forward.w1.weight
+            if sd_key not in diffusers_map:
+                # For DiT architecture, keys are already in correct format
+                # Just convert to standard LoRA format with .lora_up/.lora_down suffix
+                up, down, alpha, mid, dora_scale, reshape = lora_data
+                key_suffix = key_str.replace("diffusion_model.", "").replace(".", "_")
+                up_key = "lora_unet_{}.lora_up.weight".format(key_suffix)
+                down_key = "lora_unet_{}.lora_down.weight".format(key_suffix)
+                alpha_key = "lora_unet_{}.alpha".format(key_suffix)
 
-            # check if alpha is None and set it to 1.0
-            if alpha is None:
-                alpha = 1.0
+                # check if alpha is None and set it to 1.0
+                if alpha is None:
+                    alpha = 1.0
 
-            out[up_key] = up
-            out[down_key] = down
-            out[alpha_key] = torch.tensor(alpha)
+                out[up_key] = up
+                out[down_key] = down
+                out[alpha_key] = torch.tensor(alpha)
+            else:
+                # Standard SD UNet architecture - use mapping
+                out_key = diffusers_map[sd_key]
+
+                up, down, alpha, mid, dora_scale, reshape = lora_data
+                up_key = "{}.lora_up.weight".format(out_key)
+                down_key = "{}.lora_down.weight".format(out_key)
+                alpha_key = "{}.alpha".format(out_key)
+
+                # check if alpha is None and set it to 1.0
+                if alpha is None:
+                    alpha = 1.0
+
+                out[up_key] = up
+                out[down_key] = down
+                out[alpha_key] = torch.tensor(alpha)
         else:
             raise ValueError(f"Currently only LoRA type: {lora_type} is supported.")
     return out
 
 
-def detect_block_names(layer_key) -> Dict[str, str]:
+def detect_block_names(layer_key: str) -> BlockNameInfo:
     # Convert tuple keys to strings (ComfyUI uses tuple keys)
     if isinstance(layer_key, tuple):
         layer_key = layer_key[0]
