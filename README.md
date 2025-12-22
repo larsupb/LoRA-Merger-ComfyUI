@@ -259,7 +259,7 @@ Adjust LoRA rank using SVD decomposition.
 **Parameters:**
 - `lora`: Input LoRA
 - `rank_mode`: Rank selection strategy
-  - Fixed: `target_rank` specifies exact rank
+  - `target_rank` specifies exact rank
   - `sv_ratio`: Keep singular values above ratio threshold
   - `sv_cumulative`: Keep top N% of cumulative energy
   - `sv_fro`: Frobenius norm-based truncation
@@ -331,28 +331,6 @@ Adaptive SVD that automatically selects rank based on energy threshold.
 
 **Use case:** Automatic rank selection with quality guarantees
 
-#### QR Decomposition
-QR factorization for faster decomposition without singular values.
-
-**Use case:** Speed-critical applications where singular value analysis not needed
-
-### Dynamic Rank Selection
-
-**sv_ratio**: Keep singular values above `threshold * max_singular_value`
-```
-Example: sv_ratio=0.1 keeps all σ_i where σ_i ≥ 0.1 * σ_max
-```
-
-**sv_cumulative**: Keep top N% of cumulative energy
-```
-Example: sv_cumulative=0.95 keeps smallest set where Σσ_i² ≥ 0.95 * Σσ_total²
-```
-
-**sv_fro**: Frobenius norm-based truncation
-```
-Example: sv_fro=0.99 keeps rank where ||A - A_k||_F ≤ 0.01 * ||A||_F
-```
-
 ### Error Handling
 
 All decomposers include:
@@ -399,24 +377,30 @@ Automatic layer grouping for:
 
 The system automatically detects architecture and applies appropriate decomposition strategies.
 
-## Development
-
-### Code Quality
-
-The refactored codebase achieves:
-- **39% reduction** in main merge file complexity (790 → 482 lines)
-- **100% type hint coverage** in refactored modules
-- **60+ unit tests** across 4 test files
-- **17 focused modules** with single responsibilities
-- **Zero code duplication** in merge algorithms
-
-## Contributing
-
-Contributions welcome!
 
 ## License
 
-[Insert License Here]
+MIT License
+
+Copyright (c) 2024 LoRA Power-Merger Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ## Credits
 
