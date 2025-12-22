@@ -2,7 +2,7 @@
 
 Advanced LoRA merging for ComfyUI with Mergekit integration, supporting 8+ merge algorithms including TIES, DARE, SLERP, and more. Features modular architecture, SVD decomposition, selective layer filtering, and comprehensive validation.
 
-![pm-merge-methods.png](assets/pm-merge-methods.png)
+![pm-basic_workflow.png](assets/pm-basic_workflow.png)
 
 This is an enhanced fork of laksjdjf's [LoRA Merger](https://github.com/laksjdjf/LoRA-Merger-ComfyUI) with extensive refactoring and new features. Core merging algorithms from [Mergekit](https://github.com/arcee-ai/mergekit) by Arcee AI.
 
