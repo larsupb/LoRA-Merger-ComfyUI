@@ -1,6 +1,5 @@
 from .src.lora_apply import LoraApply
 from .src.lora_block_sampler import LoRABlockSampler
-from .src.lora_load import LoraPowerMergeLoader
 from .src.lora_mergekit_merge import LoraMergerMergekit, LoraDecompose, LoraStackFromDir, LoRASelect
 from .src.lora_parameter_sweep_sampler import LoRAParameterSweepSampler
 from .src.lora_power_stacker import LoraPowerStacker
@@ -47,7 +46,6 @@ NODE_CLASS_MAPPINGS = {
 
     "PM LoRA Resizer": LoraResizer,
     "PM LoRA Apply": LoraApply,
-    "PM LoRA Loader": LoraPowerMergeLoader,
     "PM LoRA Save": LoraSave,
 }
 
@@ -82,7 +80,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
     "PM LoRA Resizer": "PM Resize LoRA",
     "PM LoRA Apply": "PM Apply LoRA",
-    "PM LoRA Loader": "PM Load LoRA",
     "PM LoRA Save": "PM Save LoRA",
 }
 
