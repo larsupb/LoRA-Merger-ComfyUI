@@ -2,7 +2,7 @@
 
 Advanced LoRA merging for ComfyUI with Mergekit integration, supporting 8+ merge algorithms including TIES, DARE, SLERP, and more. Features modular architecture, SVD decomposition, selective layer filtering, and comprehensive validation.
 
-[IMAGE: Overview of merger nodes - PLACEHOLDER]
+![pm-merge-methods.png](assets/pm-merge-methods.png)
 
 This is an enhanced fork of laksjdjf's [LoRA Merger](https://github.com/laksjdjf/LoRA-Merger-ComfyUI) with extensive refactoring and new features. Core merging algorithms from [Mergekit](https://github.com/arcee-ai/mergekit) by Arcee AI.
 
@@ -35,19 +35,13 @@ pip install -r requirements.txt
 
 ### Basic Two-LoRA Merge
 
-[IMAGE: Basic workflow - PM LoRA Stacker → PM LoRA Decompose → PM LoRA Merger → PM LoRA Apply - PLACEHOLDER]
+![pm-merge_methods.png](assets/pm-merge_methods.png)
 
 1. Stack LoRAs with **PM LoRA Stacker** or **PM LoRA Power Stacker**
 2. Decompose using **PM LoRA Stack Decompose**
 3. Choose a merge method (e.g., **PM TIES**, **PM DARE**)
 4. Merge with **PM LoRA Merger (Mergekit)**
 5. Apply with **PM LoRA Apply** or save with **PM LoRA Save**
-
-### Batch Directory Merge
-
-[IMAGE: Directory merge workflow - PLACEHOLDER]
-
-Use **PM LoRA Stacker (Directory)** to load all LoRAs from a folder and merge them in one operation.
 
 ## Node Reference
 
@@ -56,7 +50,7 @@ Use **PM LoRA Stacker (Directory)** to load all LoRAs from a folder and merge th
 #### PM LoRA Stacker
 Combine multiple LoRAs into a stack for merging. Dynamically adds connection points as you connect LoRAs.
 
-[IMAGE: PM LoRA Stacker node - PLACEHOLDER]
+![pm-lora_stacker.png](assets/pm-lora_stacker.png)
 
 **Inputs:**
 - `lora_1`, `lora_2`, ... `lora_N`: LoRABundle inputs (unlimited)
@@ -67,17 +61,19 @@ Combine multiple LoRAs into a stack for merging. Dynamically adds connection poi
 #### PM LoRA Stacker (Directory)
 Load all LoRAs from a directory automatically.
 
-[IMAGE: PM LoRA Stacker Directory node - PLACEHOLDER]
+![pm-stack_drom_dir.png](assets/pm-stack_drom_dir.png)
 
 **Parameters:**
-- `directory_path`: Path to folder containing LoRA files
-- `strength_model`: Default model strength for all LoRAs
-- `strength_clip`: Default CLIP strength for all LoRAs
+- `directory`: Path to folder containing LoRA files
+- `layer_filter`: Preset filters ("full", "attn-only", "attn-mlp", "mlp-only", "dit-attn", "dit-mlp") or custom
+- `sort_by`: "alphabetical" or "modification_time"
+- `limit`: Limit number of LoRAs to load (default: 0 for all)
+
 
 #### PM LoRA Stack Decompose
 Decompose LoRA stack into (up, down, alpha) tensor components for merging.
 
-[IMAGE: PM LoRA Stack Decompose node - PLACEHOLDER]
+![pm-lora_decomposer.png](assets/pm-lora_decomposer.png)
 
 **Features:**
 - **Hash-based caching**: Skips expensive decomposition if inputs unchanged
@@ -85,23 +81,24 @@ Decompose LoRA stack into (up, down, alpha) tensor components for merging.
 - **Layer filtering**: Apply preset or custom layer filters
 
 **Parameters:**
-- `lora_stack`: Input LoRAStack
-- `layer_filter`: Preset filters ("full", "attn-only", "attn-mlp", "mlp-only", "dit-attn", "dit-mlp") or custom
+- `key_dicts`: Input LoRAStack
+- `decomposition_method`: Choose from Standard SVD, Randomized SVD, or Energy-Based Randomized SVD
+- `svd_rank`: Target rank for decomposition (0 for full rank)'
+- `device`: Processing device ("cpu", "cuda")
 
 **Outputs:**
 - `components`: LoRATensors (decomposed tensors by layer)
-- `strengths`: LoRAWeights (strength_model/strength_clip per LoRA)
 
 #### PM LoRA Merger (Mergekit)
 Main merging node using Mergekit algorithms. Processes layers in parallel with thread-safe progress tracking.
 
-[IMAGE: PM LoRA Merger node - PLACEHOLDER]
+![pm-lora_merger.png](assets/pm-lora_merger.png)
 
 **Parameters:**
+- `merge_method`: MergeMethod configuration from method nodes
 - `components`: Decomposed LoRATensors from decompose node
 - `strengths`: LoRAWeights from decompose node
-- `merge_method`: MergeMethod configuration from method nodes
-- `lambda_scale`: Final scaling factor (default: 1.0)
+- `_lambda`: Final scaling factor (default: 1.0)
 - `device`: Processing device ("cpu", "cuda")
 - `dtype`: Computation precision ("float32", "float16", "bfloat16")
 
@@ -117,21 +114,19 @@ Main merging node using Mergekit algorithms. Processes layers in parallel with t
 #### PM LoRA Apply
 Apply merged LoRA to a model.
 
-[IMAGE: PM LoRA Apply node - PLACEHOLDER]
+![pm-lora_apply.png](assets/pm-lora_apply.png)
 
 **Inputs:**
 - `model`: ComfyUI model to patch
-- `clip`: ComfyUI CLIP model
 - `lora`: Merged LoRA from merger
 
 **Outputs:**
 - `model`: Patched model
-- `clip`: Patched CLIP
 
 #### PM LoRA Save
-Save merged LoRA to disk in standard format.
+Save merged LoRA to disk in standard format. This will also save the original clip weights if present.
 
-[IMAGE: PM LoRA Save node - PLACEHOLDER]
+![pm-save_lora.png](assets/pm-save_lora.png)
 
 **Parameters:**
 - `lora`: Merged LoRA to save
@@ -144,15 +139,11 @@ Each method node configures algorithm-specific parameters. Connect to the `merge
 #### PM Linear
 Simple weighted linear combination.
 
-[IMAGE: PM Linear node - PLACEHOLDER]
-
 **Parameters:**
 - `normalize` (bool): Normalize by number of LoRAs (default: True)
 
 #### PM TIES
 Task Arithmetic with Interference Elimination and Sign consensus.
-
-[IMAGE: PM TIES node - PLACEHOLDER]
 
 **Parameters:**
 - `density` (float): Fraction of values to keep (0.0-1.0, default: 0.9)
@@ -163,18 +154,13 @@ Task Arithmetic with Interference Elimination and Sign consensus.
 #### PM DARE
 Drop And REscale for efficient model merging.
 
-[IMAGE: PM DARE node - PLACEHOLDER]
-
 **Parameters:**
 - `density` (float): Probability of keeping each parameter (default: 0.9)
 - `normalize` (bool): Normalize after rescaling (default: True)
 
 **Reference:** [DARE Paper](https://arxiv.org/abs/2311.03099)
 
-#### PM DELLA
 Depth-Enhanced Low-rank adaptation with Layer-wise Averaging.
-
-[IMAGE: PM DELLA node - PLACEHOLDER]
 
 **Parameters:**
 - `density` (float): Layer density parameter (default: 0.9)
@@ -184,16 +170,12 @@ Depth-Enhanced Low-rank adaptation with Layer-wise Averaging.
 #### PM Breadcrumbs
 Breadcrumb-based merging strategy.
 
-[IMAGE: PM Breadcrumbs node - PLACEHOLDER]
-
 **Parameters:**
 - `density` (float): Path density (default: 0.9)
 - `tie_method` ("sum" or "mean"): How to combine tied parameters
 
 #### PM SLERP
 Spherical Linear Interpolation for smooth model interpolation.
-
-[IMAGE: PM SLERP node - PLACEHOLDER]
 
 **Parameters:**
 - `t` (float): Interpolation factor (0.0-1.0, default: 0.5)
@@ -203,15 +185,11 @@ Spherical Linear Interpolation for smooth model interpolation.
 #### PM NuSLERP
 Normalized Spherical Linear Interpolation for multiple models.
 
-[IMAGE: PM NuSLERP node - PLACEHOLDER]
-
 **Parameters:**
 - `normalize` (bool): Normalize result to unit sphere (default: True)
 
 #### PM Karcher
 Karcher mean on the manifold (generalized SLERP for N models).
-
-[IMAGE: PM Karcher node - PLACEHOLDER]
 
 **Parameters:**
 - `max_iterations` (int): Maximum optimization iterations (default: 100)
@@ -220,15 +198,11 @@ Karcher mean on the manifold (generalized SLERP for N models).
 #### PM Task Arithmetic
 Standard task vector arithmetic (delta merging).
 
-[IMAGE: PM Task Arithmetic node - PLACEHOLDER]
-
 **Parameters:**
 - `normalize` (bool): Normalize by number of models (default: False)
 
 #### PM SCE (Selective Consensus Ensemble)
 Selective consensus with threshold-based parameter selection.
-
-[IMAGE: PM SCE node - PLACEHOLDER]
 
 **Parameters:**
 - `threshold` (float): Consensus threshold (default: 0.5)
@@ -236,15 +210,11 @@ Selective consensus with threshold-based parameter selection.
 #### PM NearSwap
 Nearest neighbor parameter swapping.
 
-[IMAGE: PM NearSwap node - PLACEHOLDER]
-
 **Parameters:**
 - `distance_metric` ("cosine" or "euclidean"): Distance measure
 
 #### PM Arcee Fusion
 Arcee's proprietary fusion method for high-quality merges.
-
-[IMAGE: PM Arcee Fusion node - PLACEHOLDER]
 
 **Parameters:**
 - Various advanced parameters (see node UI)
@@ -253,8 +223,6 @@ Arcee's proprietary fusion method for high-quality merges.
 
 #### PM LoRA Resizer
 Adjust LoRA rank using SVD decomposition.
-
-[IMAGE: PM LoRA Resizer node - PLACEHOLDER]
 
 **Parameters:**
 - `lora`: Input LoRA
@@ -280,17 +248,11 @@ Adjust LoRA rank using SVD decomposition.
 #### PM LoRA Block Sampler
 Sample different block configurations for layer-wise experiments.
 
-[IMAGE: PM LoRA Block Sampler node - PLACEHOLDER]
-
 #### PM LoRA Stack Sampler
 Sample subsets of LoRAs from a stack.
 
-[IMAGE: PM LoRA Stack Sampler node - PLACEHOLDER]
-
 #### PM Parameter Sweep Sampler
 Systematically sweep through parameter combinations for merge optimization.
-
-[IMAGE: PM Parameter Sweep Sampler node - PLACEHOLDER]
 
 **Features:**
 - Cartesian product of parameter ranges
@@ -302,7 +264,6 @@ Systematically sweep through parameter combinations for merge optimization.
 #### PM LoRA Power Stacker
 Advanced stacking with per-LoRA configuration and dynamic input management.
 
-[IMAGE: PM LoRA Power Stacker node - PLACEHOLDER]
 
 **Features:**
 - **Dynamic LoRA inputs**: Add unlimited LoRAs with individual strength controls
