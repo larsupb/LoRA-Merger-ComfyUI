@@ -165,11 +165,10 @@ which differs from the symmetric distribution used in lora_decompose."""
                 # Original strength: (alpha / current_rank) * (up @ down)
                 # New strength: (alpha_scaled / new_rank) * (up_new @ down_new)
                 # To maintain same strength: alpha_scaled = alpha * (new_rank / current_rank)
-                # However, since we want to preserve the original alpha value semantics,
-                # we keep alpha unchanged and the SVD already captured the strength in the tensors
-                # But if alpha was None (now set to current_rank), scale it to new_rank
-                if alpha_new == current_rank:
-                    alpha_new = new_rank
+                #
+                # Note: adjust_tensor_dims() does NOT modify alpha, so alpha_new == alpha (original)
+                # We need to scale it to maintain the same effective LoRA strength after resizing
+                alpha_new = float(alpha) * (new_rank / current_rank)
 
                 # Log shapes and alpha for debugging
                 # logging.info(f"Layer {key}: Original shapes up={up.shape}, down={down.shape}, rank={current_rank}, alpha={alpha}")
