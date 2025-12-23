@@ -1,6 +1,9 @@
 from .src.lora_apply import LoraApply
 from .src.lora_block_sampler import LoRABlockSampler
-from .src.lora_mergekit_merge import LoraMergerMergekit, LoraDecompose, LoraStackFromDir, LoRASelect
+from .src.lora_mergekit_merge import LoraMergerMergekit
+from .src.lora_selector import LoRASelect
+from .src.lora_dir_stacker import LoraStackFromDir
+from .src.lora_decompose import LoraDecompose
 from .src.lora_parameter_sweep_sampler import LoRAParameterSweepSampler
 from .src.lora_power_stacker import LoraPowerStacker
 from .src.lora_resize import LoraResizer

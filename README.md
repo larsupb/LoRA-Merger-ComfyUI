@@ -59,15 +59,29 @@ Combine multiple LoRAs into a stack for merging. Dynamically adds connection poi
 - `LoRAStack`: Dictionary mapping LoRA names to their patch dictionaries
 
 #### PM LoRA Stacker (Directory)
-Load all LoRAs from a directory automatically.
+Load all LoRAs from a directory automatically with unified strength control.
 
 ![pm-stack_drom_dir.png](assets/pm-stack_drom_dir.png)
 
 **Parameters:**
+- `model`: The diffusion model the LoRAs will be applied to
 - `directory`: Path to folder containing LoRA files
-- `layer_filter`: Preset filters ("full", "attn-only", "attn-mlp", "mlp-only", "dit-attn", "dit-mlp") or custom
-- `sort_by`: "alphabetical" or "modification_time"
-- `limit`: Limit number of LoRAs to load (default: 0 for all)
+- `strength_model`: General model strength applied to all LoRAs (default: 1.0, range: -10.0 to 10.0)
+- `strength_clip`: General CLIP strength applied to all LoRAs (default: 1.0, range: -10.0 to 10.0)
+- `layer_filter`: Preset filters ("full", "attn-only", "attn-mlp") or custom
+- `sort_by`: "name", "name descending", "date", or "date descending"
+- `limit`: Limit number of LoRAs to load (default: -1 for all)
+
+**Features:**
+- **Unified strength control**: Set model and CLIP strength once for all LoRAs in directory
+- **Automatic loading**: No need to manually connect multiple LoRA loaders
+- **Flexible sorting**: Order by filename or modification date, ascending or descending
+- **Layer filtering**: Apply filters during loading for selective merging
+
+**Outputs:**
+- `LoRAStack`: Dictionary mapping LoRA names to their patch dictionaries
+- `LoRAWeights`: Strength values for each LoRA
+- `LoRARawDict`: Raw LoRA state dictionaries for CLIP weights
 
 
 #### PM LoRA Stack Decompose
@@ -221,49 +235,270 @@ Arcee's proprietary fusion method for high-quality merges.
 
 ### Utility Nodes
 
-#### PM LoRA Resizer
-Adjust LoRA rank using SVD decomposition.
+#### PM LoRA Modifier
+Apply block-wise scaling to LoRA weights for fine-grained control over different network layers.
 
-**Parameters:**
-- `lora`: Input LoRA
-- `rank_mode`: Rank selection strategy
-  - `target_rank` specifies exact rank
-  - `sv_ratio`: Keep singular values above ratio threshold
-  - `sv_cumulative`: Keep top N% of cumulative energy
-  - `sv_fro`: Frobenius norm-based truncation
-- `target_rank` (int): Target rank for fixed mode
-- `dynamic_param` (float): Parameter for dynamic modes (ratio/cumulative/fro)
-- `device`: Processing device
-- `dtype`: Computation precision
+![pm-lora_modifier.png](assets/pm-lora_modifier.png)
+
+**Inputs:**
+- `key_dicts`: LoRAStack to modify
+- `blocks_store`: JSON string containing block scale configuration
 
 **Features:**
-- **Dynamic rank selection**: Automatically choose optimal rank based on singular value distribution
-- **Statistical reporting**: Shows Frobenius norm retention and singular value retention
-- **Conv and linear support**: Handles 2D, 3D, and 4D tensors
-- **Decomposer selection**: Choose from Standard SVD, Randomized SVD, or QR factorization
+- **Block-wise scaling**: Apply different scale factors to different blocks (input_blocks, middle_block, output_blocks)
+- **Architecture support**: Automatically detects and handles both SD/SDXL and DiT architectures
+- **Per-layer control**: Scale individual attention, MLP, or specific sub-blocks
+- **Non-destructive**: Creates modified copy without altering original LoRA
+
+**Block Scale Format:**
+The `blocks_store` parameter expects a JSON string with the following structure:
+```json
+{
+  "mode": "sdxl_unet",
+  "blockScales": {
+    "input_blocks.0": 1.0,
+    "input_blocks.1": 0.8,
+    "middle_block.1": 1.2,
+    "output_blocks.0": 0.9
+  }
+}
+```
+
+**Supported Architectures:**
+- `"sdxl_unet"`: Stable Diffusion XL UNet blocks
+- `"sd_unet"`: Stable Diffusion UNet blocks
+- `"dit"`: Diffusion Transformer blocks
+
+**Use Cases:**
+- **Layer-Blocked Weights (LBW)**: Implement custom block weight schemes
+- **Selective emphasis**: Boost or reduce specific layer contributions
+- **Fine-tuning merged results**: Adjust specific blocks after merging
+- **Architecture-specific tuning**: Different scaling for different model parts
 
 **Output:**
-- Resized LoRA with adjusted rank
+- Modified LoRAStack with scaled weights
+
+#### PM LoRA Resizer
+Resize all layers in a LoRA to a different rank using tensor decomposition methods.
+
+![pm-workflow_lora_resize.png](assets/pm-workflow_lora_resize.png)
+
+**Parameters:**
+- `lora` (LoRABundle): Input LoRA to resize
+- `decomposition_method`: Decomposition strategy for rank adjustment
+  - `"SVD"`: Full singular value decomposition (slow but optimal)
+  - `"rSVD"`: Randomized SVD (fast, recommended for most cases)
+  - `"energy_rSVD"`: Energy-based randomized SVD (best for DiT/large LoRAs)
+- `new_rank` (int): Target rank for all layers (default: 16, range: 1-128)
+- `device`: Processing device ("cuda" or "cpu")
+- `dtype`: Computation precision ("float32", "float16", "bfloat16")
+
+**Features:**
+- **Layer-by-layer processing**: Resizes each layer independently using `adjust_tensor_dims`
+- **Smart optimization**: Skips layers already at target rank
+- **Format compatibility**: Handles standard LoRA format (skips LoHA/LoCon and DoRA)
+- **Metadata preservation**: Maintains original lora_raw (CLIP weights), strength values, and updates name to include new rank
+- **Contiguous tensors**: Ensures all output tensors are contiguous for safetensors compatibility
+- **Progress tracking**: Real-time progress bar during processing
+- **Memory efficient**: Automatic CUDA cache cleanup after processing
+
+**Output:**
+- LoRABundle with all layers resized to target rank, named as `{original_name}_r{new_rank}`
+
+**Use Cases:**
+- Reduce LoRA file size by lowering rank
+- Standardize ranks across multiple LoRAs before merging
+- Fine-tune model capacity vs. quality tradeoff
+- Prepare LoRAs for resource-constrained environments
+
+**Note:** Uses asymmetric singular value distribution (all S values in up matrix), which differs from the symmetric distribution used in lora_decompose.
 
 #### PM LoRA Block Sampler
 Sample different block configurations for layer-wise experiments.
 
-#### PM LoRA Stack Sampler
-Sample subsets of LoRAs from a stack.
+![pm-block_sampler.png](assets/pm-block_sampler.png)
 
-#### PM Parameter Sweep Sampler
-Systematically sweep through parameter combinations for merge optimization.
+**Parameters:**
+- `model`: The diffusion model the LoRAs will be applied to
+- `positive`: Positive conditioning
+- `negative`: Negative conditioning
+- `sampler`: ComfyUI sampler to use
+- `sigmas`: Sigma schedule for sampling
+- `latent_image`: Initial latent image
+- `lora`: LoRABundle to sample from
+- `vae`: VAE model for decoding
+- `add_noise`: Boolean if to add noise to latent image
+- `noise_seed`: Seed for noise generation
+- `control_after_generate`: Select control strategy after generation
+- `block_sampling_mode`: Sampling mode for blocks ("round_robin_exclude", "round_robin_include")
+- `image_display`: Whether to display generated images or display the differential image in comparison to the base image
+ 
+
+#### PM LoRA Stack Sampler
+Iteratively sample images using each LoRA from a stack individually, generating comparison grids.
+
+![pm-lora_stack_sampler.png](assets/pm-lora_stack_sampler.png)
+
+**Parameters:**
+- `model`: The diffusion model the LoRAs will be applied to
+- `vae`: VAE model for decoding latents to images
+- `add_noise`: Whether to add noise to latent image (default: True)
+- `noise_seed`: Random seed for noise generation (0 to 2^64-1)
+- `cfg`: Classifier-free guidance scale (default: 8.0, range: 0.0-100.0)
+- `positive`: Positive conditioning prompt
+- `negative`: Negative conditioning prompt
+- `sampler`: ComfyUI sampler to use (e.g., KSampler, DPM++)
+- `sigmas`: Sigma schedule for noise levels
+- `latent_image`: Initial latent image to denoise
+- `lora_key_dicts`: LoRAStack from decompose or stacker nodes
+- `lora_strengths`: LoRAWeights containing strength values for each LoRA
 
 **Features:**
-- Cartesian product of parameter ranges
-- Support for strength, density, rank variations
-- Export results for analysis
+- **Individual LoRA sampling**: Applies each LoRA from the stack separately to generate comparison images
+- **Automated image annotation**: Each generated image is labeled with the LoRA name and strength
+- **Dual output format**:
+  - Individual annotated images with LoRA metadata
+  - Organized image grid (LoRAs on X-axis, batches on Y-axis)
+- **Text wrapping**: Long LoRA names are automatically wrapped for readability
+- **Batch support**: Handles multiple images per LoRA (batch dimension on Y-axis of grid)
+
+**Outputs:**
+- `latents`: Concatenated latents for all sampled images
+- `images`: Individual annotated images as separate outputs
+- `image_grid`: Combined grid view with all samples organized by LoRA and batch
+
+**Use Cases:**
+- **LoRA comparison**: Visually compare the effect of different LoRAs with identical settings
+- **Stack validation**: Verify that all LoRAs in a stack are working correctly before merging
+- **Style exploration**: Test multiple style LoRAs to choose the best for your project
+- **Parameter tuning**: Compare LoRAs at different strength values (set in stacker node)
+
+**Workflow Example:**
+```
+LoRA Stacker → LoRA Stack Decompose → LoRA Stack Sampler → Image Grid
+   (3 LoRAs)                            (with model, VAE, prompts)
+```
+
+#### PM Parameter Sweep Sampler
+Systematically sweep through merge parameter values to find optimal settings visually.
+
+![pm-paramter-sweep-sampler.png](assets/pm-paramter-sweep-sampler.png)
+
+**Parameters:**
+- `model`: The diffusion model the merged LoRAs will be applied to
+- `vae`: VAE model for decoding latents to images
+- `add_noise`: Whether to add noise to latent image (default: True)
+- `noise_seed`: Random seed for noise generation (0 to 2^64-1)
+- `cfg`: Classifier-free guidance scale (default: 8.0, range: 0.0-100.0)
+- `positive`: Positive conditioning prompt
+- `negative`: Negative conditioning prompt
+- `sampler`: ComfyUI sampler to use
+- `sigmas`: Sigma schedule for noise levels
+- `latent_image`: Initial latent image to denoise
+- `merge_context`: MergeContext output from **PM LoRA Merger (Mergekit)** node
+- `parameter_name`: Name of the merge parameter to sweep (e.g., "t", "density", "normalize")
+- `parameter_values`: Parameter values to test (see formats below)
+- `parameter_name_2`: Optional second parameter for 2D sweeps (leave empty for 1D)
+- `parameter_values_2`: Second parameter values (same formats as parameter_values)
+
+**Parameter Value Formats:**
+The `parameter_values` and `parameter_values_2` fields support multiple input formats:
+
+1. **Linspace format**: `"min - max | num_points"`
+   - Example: `"0.25 - 0.75 | 3"` → [0.25, 0.5, 0.75]
+   - Evenly spaces num_points between min and max
+
+2. **Step format**: `"min - max : step"`
+   - Example: `"0.25 - 0.75 : 0.25"` → [0.25, 0.5, 0.75]
+   - Increments from min to max by step size
+
+3. **Explicit format**: `"val1, val2, val3"`
+   - Example: `"0.25, 0.5, 0.75"` → [0.25, 0.5, 0.75]
+   - Comma-separated list of specific values
+
+4. **Single value**: `"0.5"`
+   - Example: `"0.5"` → [0.5]
+   - Tests a single parameter value
+
+5. **Boolean parameters**: Auto-detected
+   - If parameter is boolean (e.g., "normalize"), automatically uses [False, True]
+   - `parameter_values` input is ignored for boolean parameters
+
+**Features:**
+- **Single parameter mode**: Sweep one parameter across multiple values (1D grid)
+- **Dual parameter mode**: Sweep two parameters for n × m comparison (2D grid)
+- **Automatic boolean handling**: Boolean parameters auto-expand to [False, True]
+- **Image annotation**: Each sample labeled with parameter name and value(s)
+- **Progress tracking**: Real-time progress bar shows overall completion
+- **Safety limits**: Maximum 64 images to prevent excessive computation
+- **Merge method agnostic**: Works with any merge method (SLERP, TIES, DARE, etc.)
+
+**Outputs:**
+- `latents`: Stacked latents for all parameter combinations
+- `image_grid`: Annotated comparison grid (horizontal for 1D, rows×cols for 2D)
+
+**Use Cases:**
+
+**SLERP Interpolation Sweep:**
+```
+parameter_name: "t"
+parameter_values: "0.0 - 1.0 | 5"
+→ Tests t=[0.0, 0.25, 0.5, 0.75, 1.0] to find optimal interpolation point
+```
+
+**TIES Density Optimization:**
+```
+parameter_name: "density"
+parameter_values: "0.5, 0.7, 0.9"
+→ Compares sparse (0.5), medium (0.7), and dense (0.9) merges
+```
+
+**DARE Drop Rate Analysis:**
+```
+parameter_name: "density"
+parameter_values: "0.5 - 0.95 : 0.15"
+→ Tests density=[0.5, 0.65, 0.8, 0.95] to balance efficiency vs quality
+```
+
+**Boolean Parameter Testing:**
+```
+parameter_name: "normalize"
+parameter_values: "" (ignored)
+→ Automatically tests [False, True] to compare normalized vs unnormalized
+```
+
+**2D Parameter Sweep (Dual Mode):**
+```
+parameter_name: "density"
+parameter_values: "0.5, 0.7, 0.9"
+parameter_name_2: "k"
+parameter_values_2: "16, 32, 64"
+→ Generates 3 × 3 = 9 images testing all combinations
+```
+
+**Workflow Example:**
+```
+LoRA Stack → Decompose → Method Node (SLERP) → Merger (with MergeContext output)
+                                                     ↓
+                                              Parameter Sweep Sampler
+                                              (sweep "t" from 0 to 1)
+                                                     ↓
+                                              Annotated Image Grid
+```
+
+**Notes:**
+- Use MergeContext output from **PM LoRA Merger (Mergekit)** instead of the LoRA output
+- Each parameter combination creates a new merge + sampling operation
+- Parameter names must match the merge method's settings (check method node inputs)
+- For invalid parameter names, the node provides a list of available parameters in the error message
+- 2D sweeps create grids where rows = first parameter values, columns = second parameter values
 
 ### Power Stacker Node
 
 #### PM LoRA Power Stacker
 Advanced stacking with per-LoRA configuration and dynamic input management.
 
+![pm-lora_stacker.png](assets/pm-lora_stacker.png)
 
 **Features:**
 - **Dynamic LoRA inputs**: Add unlimited LoRAs with individual strength controls
