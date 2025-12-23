@@ -172,8 +172,8 @@ which differs from the symmetric distribution used in lora_decompose."""
                     alpha_new = new_rank
 
                 # Log shapes and alpha for debugging
-                logging.info(f"Layer {key}: Original shapes up={up.shape}, down={down.shape}, rank={current_rank}, alpha={alpha}")
-                logging.info(f"Layer {key}: Resized shapes up_new={up_new.shape}, down_new={down_new.shape}, rank={new_rank}, alpha_new={alpha_new}")
+                # logging.info(f"Layer {key}: Original shapes up={up.shape}, down={down.shape}, rank={current_rank}, alpha={alpha}")
+                # logging.info(f"Layer {key}: Resized shapes up_new={up_new.shape}, down_new={down_new.shape}, rank={new_rank}, alpha_new={alpha_new}")
 
                 # Ensure tensors are contiguous (required for safetensors saving)
                 # SVD operations can produce non-contiguous tensors

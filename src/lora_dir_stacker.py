@@ -1,7 +1,10 @@
 import os
+import comfy.lora
+import comfy.utils
 
 from .merge import parse_layer_filter, apply_layer_filter
 from .types import LORA_STACK, LORA_WEIGHTS
+from .utils import LayerFilter
 
 
 class LoraStackFromDir:
@@ -18,7 +21,7 @@ class LoraStackFromDir:
                 "strength_model": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01, "tooltip": "General model strength applied to all LoRAs."}),
                 "strength_clip": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01, "tooltip": "General CLIP strength applied to all LoRAs."}),
                 "layer_filter": (
-                    ["full", "attn-mlp", "attn-only"], {"default": "full", "tooltip": "Filter for specific layers."}),
+                    list(LayerFilter.PRESETS.keys()), {"default": "full", "tooltip": "Filter for specific layers."}),
                 "sort_by": (["name", "name descending", "date", "date descending"],
                             {"default": "name", "tooltip": "Sort LoRAs by name or size."}),
                 "limit": ("INT", {"default": -1, "min": -1, "max": 1000, "tooltip": "Limit the number of LoRAs to load."}),

@@ -70,29 +70,32 @@ def parse_layer_filter(layer_filter: LayerFilterType) -> Optional[LayerComponent
     """
     Parse layer filter string into set of component names.
 
-    Converts high-level filter specification into specific component name sets
-    for Stable Diffusion architecture LoRAs.
+    Converts high-level filter specification into specific component name sets.
+    Architecture-agnostic: works for both Stable Diffusion and DiT LoRAs.
 
     Args:
         layer_filter: Filter type specification
             - "full": No filtering (returns None)
-            - "attn-mlp": Only attention and MLP layers
-            - "attn-only": Only attention layers
+            - "attn-only": Only attention layers (SD: attn1/attn2, DiT: attention)
+            - "mlp-only": Only MLP/feedforward layers (SD: ff, DiT: mlp/feed_forward)
+            - "attn-mlp": Both attention and MLP layers
 
     Returns:
         Set of layer component names to keep, or None for no filtering
 
     Example:
         >>> parse_layer_filter("attn-mlp")
-        {"attn1", "attn2", "ff"}
+        {"attn1", "attn2", "attention", "ff", "mlp", "feed_forward"}
+
+    Note:
+        This function delegates to LayerFilter.PRESETS for consistency.
+        Direct use of the LayerFilter class is recommended for new code.
     """
-    if layer_filter == "full":
-        return None
-    elif layer_filter == "attn-mlp":
-        return {"attn1", "attn2", "ff"}
-    elif layer_filter == "attn-only":
-        return {"attn1", "attn2"}
-    return None
+    # Import here to avoid circular imports
+    from ..utils.layer_filter import LayerFilter
+
+    # Delegate to LayerFilter.PRESETS for single source of truth
+    return LayerFilter.PRESETS.get(layer_filter, None)
 
 
 def apply_layer_filter(

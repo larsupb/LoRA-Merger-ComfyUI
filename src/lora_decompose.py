@@ -56,7 +56,9 @@ class LoraDecompose:
                         ),
                     }
                 ),
-                "device": (["cuda", "cpu"],),
+                "device": (["cuda", "cpu"],
+                           {"tooltip": "Decomposition device. Note: All decomposition uses float32 internally for numerical stability, then converts back to the original dtype."}
+                           ),
             },
         }
 

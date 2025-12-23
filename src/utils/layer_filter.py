@@ -7,11 +7,9 @@ Provides LayerFilter class for selective layer merging operations.
 from typing import Set, Optional, Dict, Any
 from ..types import LORA_KEY_DICT, LayerComponentSet
 from .config import (
-    SD_ATTENTION_LAYERS,
-    SD_MLP_LAYERS,
-    SD_ATTENTION_MLP_LAYERS,
-    DIT_ATTENTION_LAYERS,
-    DIT_MLP_LAYERS,
+    ATTENTION_LAYERS,
+    MLP_LAYERS,
+    ATTENTION_MLP_LAYERS,
 )
 
 
@@ -23,14 +21,12 @@ class LayerFilter:
     (e.g., attention only, attention + MLP, etc.).
     """
 
-    # Predefined filter presets
+    # Predefined filter presets (architecture-agnostic, works for both SD and DiT)
     PRESETS = {
         "full": None,  # No filtering
-        "attn-only": SD_ATTENTION_LAYERS,
-        "attn-mlp": SD_ATTENTION_MLP_LAYERS,
-        "mlp-only": SD_MLP_LAYERS,
-        "dit-attn": DIT_ATTENTION_LAYERS,
-        "dit-mlp": DIT_MLP_LAYERS,
+        "attn-only": ATTENTION_LAYERS,
+        "attn-mlp": ATTENTION_MLP_LAYERS,
+        "mlp-only": MLP_LAYERS,
     }
 
     def __init__(self, filter_spec: str | Set[str] | None):
@@ -45,7 +41,6 @@ class LayerFilter:
 
         Examples:
             >>> LayerFilter("attn-only")  # Only attention layers
-            >>> LayerFilter({"attn1", "attn2"})  # Custom filter
             >>> LayerFilter(None)  # No filtering
         """
         if filter_spec is None or filter_spec == "full":

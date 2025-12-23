@@ -68,7 +68,7 @@ Load all LoRAs from a directory automatically with unified strength control.
 - `directory`: Path to folder containing LoRA files
 - `strength_model`: General model strength applied to all LoRAs (default: 1.0, range: -10.0 to 10.0)
 - `strength_clip`: General CLIP strength applied to all LoRAs (default: 1.0, range: -10.0 to 10.0)
-- `layer_filter`: Preset filters ("full", "attn-only", "attn-mlp") or custom
+- `layer_filter`: Preset filters ("full", "attn-only", "mlp-only", "attn-mlp") for architecture-agnostic layer selection
 - `sort_by`: "name", "name descending", "date", or "date descending"
 - `limit`: Limit number of LoRAs to load (default: -1 for all)
 
@@ -501,10 +501,18 @@ Advanced stacking with per-LoRA configuration and dynamic input management.
 ![pm-lora_stacker.png](assets/pm-lora_stacker.png)
 
 **Features:**
-- **Dynamic LoRA inputs**: Add unlimited LoRAs with individual strength controls
+- **Dynamic LoRA inputs**: Add unlimited LoRAs with individual strength controls via widget UI
+- **Built-in search**: Click on any LoRA name to open a searchable dropdown list
 - **Per-LoRA strengths**: Separate strength_model and strength_clip for each LoRA
 - **Architecture detection**: Automatically identifies SD vs DiT LoRAs
-- **Layer filtering**: Built-in preset and custom layer filters
+- **Layer filtering**: Architecture-agnostic preset filters (full, attn-only, mlp-only, attn-mlp)
+- **CLIP integration**: Automatically applies all LoRAs to CLIP model and preserves CLIP weights in outputs
+
+**Usage:**
+- Click "➕ Add Lora" to add a new LoRA slot
+- Click on the LoRA name field to open a searchable list of available LoRAs
+- Type to filter the list in real-time
+- Toggle individual LoRAs on/off with the checkbox
 
 ## SVD and Decomposition
 
@@ -537,23 +545,35 @@ All decomposers include:
 
 ## Layer Filtering
 
-Selective merging allows targeting specific layer types:
+Selective merging allows targeting specific layer types with architecture-agnostic presets that work seamlessly with both Stable Diffusion and DiT (Diffusion Transformer) LoRAs.
 
 ### Preset Filters
 
-- `"full"`: All layers (no filter)
-- `"attn-only"`: Only attention layers (attn1, attn2)
-- `"attn-mlp"`: Attention + feed-forward (attn1, attn2, ff)
-- `"mlp-only"`: Only feed-forward layers
-- `"dit-attn"`: DiT attention layers
-- `"dit-mlp"`: DiT MLP layers
+- **`"full"`**: All layers (no filter)
+- **`"attn-only"`**: Only attention layers
+  - SD: attn1, attn2
+  - DiT: attention
+- **`"mlp-only"`**: Only MLP/feedforward layers
+  - SD: ff
+  - DiT: mlp, feed_forward
+- **`"attn-mlp"`**: Attention + MLP layers combined
+  - SD: attn1, attn2, ff
+  - DiT: attention, mlp, feed_forward
 
 ### Custom Filters
 
-Specify layer keys as comma-separated string or set:
+You can also create custom filters by providing a set of layer component names:
+```python
+from src.utils import LayerFilter
+filter = LayerFilter({"attn1", "proj_in", "proj_out"})
+filtered_patches = filter.apply(lora_patches)
 ```
-"attn1, attn2, ff.net.0"
-```
+
+**Use Cases:**
+- **Style transfer**: Use `"attn-only"` to merge only attention mechanisms for composition/style
+- **Detail merging**: Use `"mlp-only"` to merge only feedforward layers for textures/details
+- **Balanced merging**: Use `"attn-mlp"` to exclude projection and normalization layers
+- **Full merge**: Use `"full"` to merge all layer types
 
 ## Architecture Support
 

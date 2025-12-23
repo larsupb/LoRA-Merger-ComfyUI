@@ -286,34 +286,25 @@ class PMLoraStackerWidget {
     async openLoraSelector(node, event) {
         const loras = await getLorasList();
 
-        // Build menu items for LiteGraph context menu
-        const menuItems = [
-            {
-                content: "None",
-                callback: () => {
-                    this.value.lora = null;
-                    app.graph.setDirtyCanvas(true);
-                }
-            },
-            null, // Separator
-        ];
+        // Build simple array of LoRA names (enables built-in search)
+        const loraOptions = ["None", ...loras];
 
-        // Add all LoRAs to menu
-        loras.forEach(lora => {
-            menuItems.push({
-                content: lora,
-                callback: () => {
-                    this.value.lora = lora;
-                    app.graph.setDirtyCanvas(true);
-                }
-            });
-        });
-
-        // Use LiteGraph's context menu system with the actual mouse event
-        new LiteGraph.ContextMenu(menuItems, {
+        // Use LiteGraph's context menu with array of strings (enables search)
+        new LiteGraph.ContextMenu(loraOptions, {
             event: event,
             title: "Select LoRA",
-            scale: Math.max(1.0, app.canvas.ds?.scale || 1.0)
+            scale: Math.max(1.0, app.canvas.ds?.scale || 1.0),
+            className: "dark",
+            callback: (value) => {
+                if (value && value.content) {
+                    // Handle object format (shouldn't happen with string array)
+                    this.value.lora = value.content === "None" ? null : value.content;
+                } else {
+                    // Handle string format (expected)
+                    this.value.lora = value === "None" ? null : value;
+                }
+                app.graph.setDirtyCanvas(true);
+            }
         });
     }
 
@@ -350,13 +341,13 @@ app.registerExtension({
                 this.serialize_widgets = true;
                 this.loraWidgetsCounter = 0;
 
-                // Add layer filter widget
+                // Add layer filter widget (architecture-agnostic presets)
                 this.addWidget(
                     "combo",
                     "layer_filter",
                     "full",
                     (value) => {},
-                    { values: ["full", "attn-mlp", "attn-only"] }
+                    { values: ["full", "attn-only", "mlp-only", "attn-mlp"] }
                 );
 
                 // Add divider

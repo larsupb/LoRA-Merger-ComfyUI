@@ -5,7 +5,6 @@ import comfy.lora
 import comfy.utils
 from nodes import LoraLoader
 
-from .architectures import LORA_STACK, LORA_WEIGHTS
 from .merge.utils import parse_layer_filter, apply_layer_filter
 
 
