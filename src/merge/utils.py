@@ -100,7 +100,8 @@ def parse_layer_filter(layer_filter: LayerFilterType) -> Optional[LayerComponent
 
 def apply_layer_filter(
     patch_dict: LORA_KEY_DICT,
-    layer_filter: Optional[LayerComponentSet]
+    layer_filter: Optional[LayerComponentSet],
+    detect_architecture: bool = True
 ) -> LORA_KEY_DICT:
     """
     Apply layer component filter to patch dictionary.
@@ -111,22 +112,64 @@ def apply_layer_filter(
     Args:
         patch_dict: Dictionary of layer key -> LoRAAdapter
         layer_filter: Set of component names to keep, or None for no filtering
+        detect_architecture: Whether to detect and log architecture (default: True)
 
     Returns:
         Filtered patch dictionary containing only matching layers
 
+    Note:
+        Uses component-based matching (split by '.') to avoid false positives
+        from substring matches (e.g., 'ff' in 'diffusion_model').
+
     Example:
-        >>> patches = {"attn1.weight": adapter1, "ff.weight": adapter2, "other": adapter3}
+        >>> patches = {"model.attn1.weight": adapter1, "model.ff.weight": adapter2}
         >>> filtered = apply_layer_filter(patches, {"attn1", "attn2"})
-        >>> # Returns only {"attn1.weight": adapter1}
+        >>> # Returns only {"model.attn1.weight": adapter1}
     """
+    from ..utils.layer_filter import detect_lora_architecture
+
     num_keys = len(patch_dict.keys())
 
+    # Detect architecture before filtering
+    if detect_architecture and patch_dict:
+        arch_name, arch_meta = detect_lora_architecture(patch_dict)
+        total_keys = arch_meta.get("total_keys", num_keys)
+
+        if arch_name != "Unknown":
+            logging.info(f"Detected {arch_name} architecture ({total_keys} keys)")
+        else:
+            logging.debug(f"Processing LoRA ({total_keys} keys, architecture: {arch_name})")
+
     if layer_filter:
+        import re
+
+        def matches_filter(key) -> bool:
+            """
+            Check if key matches any filter component.
+
+            Uses word-boundary aware matching to avoid false positives.
+            For example, 'ff' will match 'ff_net' or '.ff.' but not 'diffusion'.
+            """
+            # Handle tuple keys from ComfyUI
+            key_str = str(key[0]) if isinstance(key, tuple) else str(key)
+            key_lower = key_str.lower()
+
+            for filter_pattern in layer_filter:
+                pattern_lower = filter_pattern.lower()
+
+                # Create regex pattern with word boundaries
+                # Match pattern when surrounded by dots, underscores, or at start/end
+                regex_pattern = r'(?:^|[._])' + re.escape(pattern_lower) + r'(?:[._]|$)'
+
+                if re.search(regex_pattern, key_lower):
+                    return True
+
+            return False
+
         patch_dict = {
             k0: v0
             for k0, v0 in patch_dict.items()
-            if any(layer in k0 for layer in layer_filter)
+            if matches_filter(k0)
         }
 
     logging.info(

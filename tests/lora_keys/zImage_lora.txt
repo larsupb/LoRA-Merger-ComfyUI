@@ -1,0 +1,106 @@
+Analyzing LoRA: loras/zImage-LoRA.safetensors
+
+Total keys: 480
+
+Sample keys (first 20):
+  diffusion_model.layers.0.adaLN_modulation.0.lora_A.weight
+  diffusion_model.layers.0.adaLN_modulation.0.lora_B.weight
+  diffusion_model.layers.0.attention.to_k.lora_A.weight
+  diffusion_model.layers.0.attention.to_k.lora_B.weight
+  diffusion_model.layers.0.attention.to_out.0.lora_A.weight
+  diffusion_model.layers.0.attention.to_out.0.lora_B.weight
+  diffusion_model.layers.0.attention.to_q.lora_A.weight
+  diffusion_model.layers.0.attention.to_q.lora_B.weight
+  diffusion_model.layers.0.attention.to_v.lora_A.weight
+  diffusion_model.layers.0.attention.to_v.lora_B.weight
+  diffusion_model.layers.0.feed_forward.w1.lora_A.weight
+  diffusion_model.layers.0.feed_forward.w1.lora_B.weight
+  diffusion_model.layers.0.feed_forward.w2.lora_A.weight
+  diffusion_model.layers.0.feed_forward.w2.lora_B.weight
+  diffusion_model.layers.0.feed_forward.w3.lora_A.weight
+  diffusion_model.layers.0.feed_forward.w3.lora_B.weight
+  diffusion_model.layers.1.adaLN_modulation.0.lora_A.weight
+  diffusion_model.layers.1.adaLN_modulation.0.lora_B.weight
+  diffusion_model.layers.1.attention.to_k.lora_A.weight
+  diffusion_model.layers.1.attention.to_k.lora_B.weight
+
+================================================================================
+
+Unique layer components found:
+  0
+  1
+  10
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+  2
+  20
+  21
+  22
+  23
+  24
+  25
+  26
+  27
+  28
+  29
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  adaLN_modulation
+  attention
+  diffusion_model
+  feed_forward
+  layers
+  lora_A
+  lora_B
+  to_k
+  to_out
+  to_q
+  to_v
+  w1
+  w2
+  w3
+
+================================================================================
+
+Pattern matching analysis:
+
+ATTENTION (240 keys):
+  diffusion_model.layers.0.attention.to_k.lora_A.weight
+  diffusion_model.layers.0.attention.to_k.lora_B.weight
+  diffusion_model.layers.0.attention.to_out.0.lora_A.weight
+  diffusion_model.layers.0.attention.to_out.0.lora_B.weight
+  diffusion_model.layers.0.attention.to_q.lora_A.weight
+  ... and 235 more
+
+MLP/FEEDFORWARD (480 keys):
+  diffusion_model.layers.0.adaLN_modulation.0.lora_A.weight
+  diffusion_model.layers.0.adaLN_modulation.0.lora_B.weight
+  diffusion_model.layers.0.attention.to_k.lora_A.weight
+  diffusion_model.layers.0.attention.to_k.lora_B.weight
+  diffusion_model.layers.0.attention.to_out.0.lora_A.weight
+  ... and 475 more
+
+NORM (60 keys):
+  diffusion_model.layers.0.adaLN_modulation.0.lora_A.weight
+  diffusion_model.layers.0.adaLN_modulation.0.lora_B.weight
+  diffusion_model.layers.1.adaLN_modulation.0.lora_A.weight
+  diffusion_model.layers.1.adaLN_modulation.0.lora_B.weight
+  diffusion_model.layers.10.adaLN_modulation.0.lora_A.weight
+  ... and 55 more
+
+================================================================================
+
+Architecture detection:
+  -> Unknown architecture

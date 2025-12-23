@@ -1,0 +1,136 @@
+Analyzing LoRA: loras/Qwen-LoRA.safetensors
+
+Total keys: 2160
+
+Sample keys (first 20):
+  transformer_blocks.0.attn.add_k_proj.alpha
+  transformer_blocks.0.attn.add_k_proj.lora_down.weight
+  transformer_blocks.0.attn.add_k_proj.lora_up.weight
+  transformer_blocks.0.attn.add_q_proj.alpha
+  transformer_blocks.0.attn.add_q_proj.lora_down.weight
+  transformer_blocks.0.attn.add_q_proj.lora_up.weight
+  transformer_blocks.0.attn.add_v_proj.alpha
+  transformer_blocks.0.attn.add_v_proj.lora_down.weight
+  transformer_blocks.0.attn.add_v_proj.lora_up.weight
+  transformer_blocks.0.attn.to_add_out.alpha
+  transformer_blocks.0.attn.to_add_out.lora_down.weight
+  transformer_blocks.0.attn.to_add_out.lora_up.weight
+  transformer_blocks.0.attn.to_k.alpha
+  transformer_blocks.0.attn.to_k.lora_down.weight
+  transformer_blocks.0.attn.to_k.lora_up.weight
+  transformer_blocks.0.attn.to_out.0.alpha
+  transformer_blocks.0.attn.to_out.0.lora_down.weight
+  transformer_blocks.0.attn.to_out.0.lora_up.weight
+  transformer_blocks.0.attn.to_q.alpha
+  transformer_blocks.0.attn.to_q.lora_down.weight
+
+================================================================================
+
+Unique layer components found:
+  0
+  1
+  10
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+  2
+  20
+  21
+  22
+  23
+  24
+  25
+  26
+  27
+  28
+  29
+  3
+  30
+  31
+  32
+  33
+  34
+  35
+  36
+  37
+  38
+  39
+  4
+  40
+  41
+  42
+  43
+  44
+  45
+  46
+  47
+  48
+  49
+  5
+  50
+  51
+  52
+  53
+  54
+  55
+  56
+  57
+  58
+  59
+  6
+  7
+  8
+  9
+  add_k_proj
+  add_q_proj
+  add_v_proj
+  attn
+  img_mlp
+  net
+  proj
+  to_add_out
+  to_k
+  to_out
+  to_q
+  to_v
+  transformer_blocks
+  txt_mlp
+
+================================================================================
+
+Pattern matching analysis:
+
+ATTENTION (1440 keys):
+  transformer_blocks.0.attn.add_k_proj.alpha
+  transformer_blocks.0.attn.add_k_proj.lora_down.weight
+  transformer_blocks.0.attn.add_k_proj.lora_up.weight
+  transformer_blocks.0.attn.add_q_proj.alpha
+  transformer_blocks.0.attn.add_q_proj.lora_down.weight
+  ... and 1435 more
+
+MLP/FEEDFORWARD (720 keys):
+  transformer_blocks.0.img_mlp.net.0.proj.alpha
+  transformer_blocks.0.img_mlp.net.0.proj.lora_down.weight
+  transformer_blocks.0.img_mlp.net.0.proj.lora_up.weight
+  transformer_blocks.0.img_mlp.net.2.alpha
+  transformer_blocks.0.img_mlp.net.2.lora_down.weight
+  ... and 715 more
+
+PROJECTION (900 keys):
+  transformer_blocks.0.attn.add_k_proj.alpha
+  transformer_blocks.0.attn.add_k_proj.lora_down.weight
+  transformer_blocks.0.attn.add_k_proj.lora_up.weight
+  transformer_blocks.0.attn.add_q_proj.alpha
+  transformer_blocks.0.attn.add_q_proj.lora_down.weight
+  ... and 895 more
+
+================================================================================
+
+Architecture detection:
+  -> Unknown architecture

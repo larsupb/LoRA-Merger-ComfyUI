@@ -4,6 +4,7 @@ import time
 from typing import Optional, Set
 
 import torch
+import comfy
 
 from .architectures.sd_lora import analyse_keys, calc_up_down_alphas
 from .types import LORA_TENSORS_BY_LAYER, LORA_STACK, LORA_TENSOR_DICT
