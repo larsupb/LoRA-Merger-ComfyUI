@@ -466,9 +466,59 @@ def resize_lora_rank_energy_rsvd(
 
     r0 = down_.shape[0]
     logging.debug(f"energy_rSVD: Input rank r0={r0}, target new_dim={new_dim}, up shape={up_.shape}, down shape={down_.shape}")
-    if new_dim >= r0:
-        logging.debug(f"energy_rSVD: Early exit - new_dim >= r0, returning original tensors")
-        return down, up  # nothing to do
+
+    # Handle upsampling case: when input rank < target rank
+    if new_dim > r0:
+        logging.debug(f"energy_rSVD: Upsampling case - new_dim > r0, using full SVD to upsample")
+        # Reconstruct full weight matrix and perform SVD to upsample
+        Wk = up_ @ down_
+
+        # Use torch.svd_lowrank with target rank
+        rank = new_dim
+        q = min(rank + 2, min(Wk.shape))  # Small oversample for upsampling
+
+        U, S, V = torch.svd_lowrank(Wk, q=q, niter=1)
+        Vh = V.transpose(-2, -1)
+
+        # Truncate to target rank
+        U = U[:, :rank]
+        S = S[:rank]
+        Vh = Vh[:rank, :]
+
+        # Distribute singular values symmetrically
+        S_sqrt = torch.sqrt(S)
+        up_new = U * S_sqrt.unsqueeze(0)
+        down_new = S_sqrt.unsqueeze(1) * Vh
+
+        # Pad if necessary (when matrix dimensions are smaller than target)
+        actual_rank = up_new.shape[1]
+        if new_dim > actual_rank:
+            pad_up = torch.zeros(
+                (up_new.shape[0], new_dim - actual_rank),
+                dtype=up.dtype,
+                device=up_.device,
+            )
+            pad_down = torch.zeros(
+                (new_dim - actual_rank, down_new.shape[1]),
+                dtype=down.dtype,
+                device=down_.device,
+            )
+            up_new = torch.cat([up_new, pad_up], dim=1)
+            down_new = torch.cat([down_new, pad_down], dim=0)
+
+        # Restore shapes
+        if len(up_shape) == 4:
+            up_new = up_new.unsqueeze(-1).unsqueeze(-1)
+        if len(down_shape) == 4:
+            down_new = down_new.unsqueeze(-1).unsqueeze(-1)
+
+        logging.debug(f"energy_rSVD: Upsampled to rank {new_dim} - up_new={up_new.shape}, down_new={down_new.shape}")
+        return down_new, up_new
+
+    # Early exit when ranks match exactly
+    if new_dim == r0:
+        logging.debug(f"energy_rSVD: Early exit - new_dim == r0, returning original tensors")
+        return down, up
 
     # ---- Phase 1: Energy pruning ----
     # Energy per rank component

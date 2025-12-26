@@ -14,7 +14,7 @@ from .src.nodes_merge_methods import TaskArithmeticMergeMethod, NearSwapMergeMet
     TIESMergeMethod, DAREMergeMethod, DELLAMergeMethod, SLERPMergeMethod, LinearMergeMethod, NuSlerpMergeMethod, \
     ArceeFusionMergeMethod, KArcherMergeMethod
 
-version_code = [2, 2, 0]
+version_code = [2, 2, 1]
 version_str = f"V{version_code[0]}.{version_code[1]}" + (f'.{version_code[2]}' if len(version_code) > 2 else '')
 print(f"### Loading: ComfyUI LoRA-PowerMerge ({version_str})")
 
