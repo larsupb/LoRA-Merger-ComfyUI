@@ -9,7 +9,12 @@ MERGEKIT_GTA_MODES = Literal[
 
 def load_on_device(tensors: Dict[ModelReference, torch.Tensor],
                    tensor_weights: Dict[ModelReference, torch.Tensor], device, dtype):
+    """
+    Load tensors onto device with specified dtype.
+    Ensures tensors are contiguous to avoid mergekit sparsify errors.
+    """
     for k, v in tensors.items():
-        tensors[k] = v.to(device=device, dtype=dtype)
+        # Ensure contiguous before moving to device to avoid .view() errors in mergekit
+        tensors[k] = v.contiguous().to(device=device, dtype=dtype)
     for k, v in tensor_weights.items():
-        tensor_weights[k] = v.to(device=device, dtype=dtype)
+        tensor_weights[k] = v.contiguous().to(device=device, dtype=dtype)

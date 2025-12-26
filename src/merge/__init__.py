@@ -7,6 +7,7 @@ This module contains all merge-related functionality:
 - Helper utilities for merging operations
 - Algorithm dispatcher
 - Base classes for merge method nodes
+- Custom sparsification methods
 """
 
 from .utils import (
@@ -15,6 +16,7 @@ from .utils import (
     parse_layer_filter,
     apply_layer_filter,
     apply_weights_to_tensors,
+    simple_weighted_average,
 )
 from .dispatcher import get_merge_method, prepare_method_args
 from .algorithms import MERGE_ALGORITHMS, get_merge_algorithm
@@ -27,6 +29,7 @@ __all__ = [
     'parse_layer_filter',
     'apply_layer_filter',
     'apply_weights_to_tensors',
+    'simple_weighted_average',
     # Dispatcher
     'get_merge_method',
     'prepare_method_args',

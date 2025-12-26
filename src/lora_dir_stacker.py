@@ -16,7 +16,8 @@ class LoraStackFromDir:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
+                "model": ("MODEL", {"tooltip": "The diffusion model used to load LoRA UNet key mappings."}),
+                "clip": ("CLIP", {"tooltip": "The CLIP model used to load LoRA CLIP key mappings."}),
                 "directory": ("STRING",),
                 "strength_model": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01, "tooltip": "General model strength applied to all LoRAs."}),
                 "strength_clip": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01, "tooltip": "General CLIP strength applied to all LoRAs."}),
@@ -28,28 +29,36 @@ class LoraStackFromDir:
             },
         }
 
-    RETURN_TYPES = ("LoRAStack", "LoRAWeights", "LoRARawDict",)
+    RETURN_TYPES = ("LoRAStack", "LoRAWeights")
     FUNCTION = "stack_loras"
     CATEGORY = "LoRA PowerMerge"
-    DESCRIPTION = "Stacks LoRA weights from the given directory and applies them to the model."
+    DESCRIPTION = """Stacks LoRA weights from the given directory.
 
-    def stack_loras(self, model, directory, strength_model: float = 1.0, strength_clip: float = 1.0,
+Loads all LoRAs from a directory and prepares them for merging. Both UNet and CLIP layers are included in the stack.
+
+Outputs:
+- LoRAStack: All LoRA patches from directory (UNet + CLIP layers)
+- LoRAWeights: Strength metadata for each LoRA (strength_model and strength_clip)"""
+
+    def stack_loras(self, model, clip, directory, strength_model: float = 1.0, strength_clip: float = 1.0,
                     layer_filter=None, sort_by: str = None, limit: int = 0) -> \
-            (LORA_STACK, LORA_WEIGHTS, dict):
+            (LORA_STACK, LORA_WEIGHTS):
         # check if directory exists
         if not os.path.isdir(directory):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
 
+        # Build key_map for LoRA loading (includes both UNet and CLIP keys)
         key_map = {}
         if model is not None:
             key_map = comfy.lora.model_lora_keys_unet(model.model, key_map)
+        if clip is not None:
+            key_map = comfy.lora.model_lora_keys_clip(clip.cond_stage_model, key_map)
 
         layer_filter = parse_layer_filter(layer_filter)
 
         # Load LoRAs and patch key names
         lora_patch_dicts = {}
         lora_strengths = {}
-        lora_raw_dicts = {}  # Store raw LoRA state dicts for CLIP weights
 
         # Load LoRAs from the directory
         # walk over files in the directory
@@ -79,6 +88,5 @@ class LoraStackFromDir:
                         'strength_model': strength_model,
                         'strength_clip': strength_clip,
                     }
-                    lora_raw_dicts[lora_name] = lora_raw  # Store raw state dict
 
-        return lora_patch_dicts, lora_strengths, lora_raw_dicts,
+        return lora_patch_dicts, lora_strengths

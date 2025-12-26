@@ -167,9 +167,14 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
                 return uda_adjusted
 
         out = {}
+        # Batch progress bar updates to reduce overhead for large layer counts (900+)
+        update_frequency = max(1, len(keys) // 100)  # Update at most 100 times
         for i, key in enumerate(keys):
             out[key] = process_key(key)
-            pbar.update(1)
+            if (i + 1) % update_frequency == 0 or (i + 1) == len(keys):
+                # Update by the batch size, or remaining items on last iteration
+                batch_size = update_frequency if (i + 1) < len(keys) else ((i + 1) % update_frequency or update_frequency)
+                pbar.update(batch_size)
 
         logging.info(f"Processed {len(keys)} keys in {time.time() - start:.2f} seconds")
 

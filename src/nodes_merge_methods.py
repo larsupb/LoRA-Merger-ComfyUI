@@ -105,8 +105,13 @@ class TaskArithmeticMergeMethod:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "rescale_norm": (["default", "l1", "l2", "none"],
-                                 {"default": "default", "tooltip": "Rescale method for sparsification process."}),
+                "rescale_norm": (["default", "dare", "l1", "l2", "none"],
+                                 {"default": "default", "tooltip": "Rescaling strategy:\n"
+                                  "• default: Auto-select (L1 for methods needing it, none otherwise)\n"
+                                  "• dare: DARE-style 1/(1-density) rescaling (fast, preserves expectation)\n"
+                                  "• l1: L1 norm preservation (precise, preserves magnitude sum)\n"
+                                  "• l2: L2 norm preservation (precise, preserves Euclidean norm)\n"
+                                  "• none: No rescaling (may reduce merge strength)"}),
                 "normalize": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
@@ -148,8 +153,13 @@ class TIESMergeMethod:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "rescale_norm": (["default", "l1", "l2", "none"],
-                                 {"default": "default", "tooltip": "Rescale method for sparsification process."}),
+                "rescale_norm": (["default", "dare", "l1", "l2", "none"],
+                                 {"default": "default", "tooltip": "Rescaling strategy:\n"
+                                  "• default: Auto-select (L1 for methods needing it, none otherwise)\n"
+                                  "• dare: DARE-style 1/(1-density) rescaling (fast, preserves expectation)\n"
+                                  "• l1: L1 norm preservation (precise, preserves magnitude sum)\n"
+                                  "• l2: L2 norm preservation (precise, preserves Euclidean norm)\n"
+                                  "• none: No rescaling (may reduce merge strength)"}),
                 "normalize": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
@@ -203,8 +213,13 @@ class BreadcrumbsMergeMethod:
                     "default": False,
                     "tooltip": "Use sign consensus algorithm of ties algorithm.",
                 }),
-                "rescale_norm": (["default", "l1", "l2", "none"],
-                                 {"default": "default", "tooltip": "Rescale method for sparsification process."}),
+                "rescale_norm": (["default", "dare", "l1", "l2", "none"],
+                                 {"default": "default", "tooltip": "Rescaling strategy:\n"
+                                  "• default: Auto-select (L1 for methods needing it, none otherwise)\n"
+                                  "• dare: DARE-style 1/(1-density) rescaling (fast, preserves expectation)\n"
+                                  "• l1: L1 norm preservation (precise, preserves magnitude sum)\n"
+                                  "• l2: L2 norm preservation (precise, preserves Euclidean norm)\n"
+                                  "• none: No rescaling (may reduce merge strength)"}),
                 "density": ("FLOAT", {
                     "default": .9,
                     "min": 0,
@@ -308,7 +323,12 @@ class DAREMergeMethod:
                     "tooltip": "Use sign consensus algorithm of ties algorithm.",
                 }),
                 "rescale_norm": (["default", "l1", "l2", "none"],
-                                 {"default": "default", "tooltip": "Rescale method for sparsification process."}),
+                                 {"default": "default", "tooltip": "Rescaling strategy:\n"
+                                  "• default: Auto-select (L1 for methods needing it, none otherwise)\n"
+                                  "• dare: DARE-style 1/(1-density) rescaling (fast, preserves expectation)\n"
+                                  "• l1: L1 norm preservation (precise, preserves magnitude sum)\n"
+                                  "• l2: L2 norm preservation (precise, preserves Euclidean norm)\n"
+                                  "• none: No rescaling (may reduce merge strength)"}),
                 "density": ("FLOAT", {
                     "default": .85,
                     "min": 0,
@@ -368,8 +388,13 @@ class DELLAMergeMethod:
                     "default": False,
                     "tooltip": "Use sign consensus algorithm of ties algorithm.",
                 }),
-                "rescale_norm": (["default", "l1", "l2", "none"],
-                                 {"default": "default", "tooltip": "Rescale method for sparsification process."}),
+                "rescale_norm": (["default", "dare", "l1", "l2", "none"],
+                                 {"default": "default", "tooltip": "Rescaling strategy:\n"
+                                  "• default: Auto-select (L1 for methods needing it, none otherwise)\n"
+                                  "• dare: DARE-style 1/(1-density) rescaling (fast, preserves expectation)\n"
+                                  "• l1: L1 norm preservation (precise, preserves magnitude sum)\n"
+                                  "• l2: L2 norm preservation (precise, preserves Euclidean norm)\n"
+                                  "• none: No rescaling (may reduce merge strength)"}),
                 "density": ("FLOAT", {
                     "default": .85,
                     "min": 0,

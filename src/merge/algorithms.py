@@ -12,6 +12,7 @@ Each function follows the same signature expected by mergekit.
 
 import logging
 from typing import Dict, Optional, Any
+from contextlib import contextmanager
 
 import torch
 from mergekit.architecture import WeightInfo
@@ -27,9 +28,9 @@ from mergekit.merge_methods.nuslerp import NuSlerpTask
 from mergekit.merge_methods.sce import sce_merge as mergekit_sce_merge
 from mergekit.merge_methods.slerp import SlerpTask
 from mergekit.sparsify import RescaleNorm
+import mergekit.sparsify as sparsify_module
 
 from .utils import apply_weights_to_tensors
-
 
 def generalized_task_arithmetic_merge(
     tensors: Dict[ModelReference, torch.Tensor],

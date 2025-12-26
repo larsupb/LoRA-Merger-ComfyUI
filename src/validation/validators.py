@@ -359,6 +359,43 @@ class MergeParameterValidator:
                         "location": "select_topk"
                     })
 
+        # DELLA-specific validation
+        if method_name == "della":
+            density = method_args.get("density", 1.0)
+            epsilon = method_args.get("epsilon", 0.1)
+
+            # Validate epsilon constraint: density +/- epsilon must be in (0, 1)
+            if density - epsilon <= 0:
+                errors.append({
+                    "code": "INVALID_EPSILON",
+                    "message": (
+                        f"Epsilon too large: density - epsilon = {density} - {epsilon} = {density - epsilon} "
+                        f"must be > 0. Try reducing epsilon or increasing density."
+                    ),
+                    "location": "epsilon"
+                })
+
+            if density + epsilon >= 1:
+                errors.append({
+                    "code": "INVALID_EPSILON",
+                    "message": (
+                        f"Epsilon too large: density + epsilon = {density} + {epsilon} = {density + epsilon} "
+                        f"must be < 1. Try reducing epsilon or reducing density."
+                    ),
+                    "location": "epsilon"
+                })
+
+        # Density validation for methods that use it
+        if method_name in ["ties", "dare", "della", "breadcrumbs"]:
+            if "density" in method_args:
+                density = method_args["density"]
+                if density <= 0 or density > 1:
+                    errors.append({
+                        "code": "INVALID_PARAMETER",
+                        "message": f"density must be in (0, 1], got {density}",
+                        "location": "density"
+                    })
+
         return {
             "valid": len(errors) == 0,
             "errors": errors,

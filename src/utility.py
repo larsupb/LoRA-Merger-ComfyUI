@@ -67,13 +67,16 @@ def adjust_tensor_dims(
     """
     up_0, up_1, _ = next(iter(ups_downs_alphas.values()))
     target_rank = up_0.shape[1] if svd_rank == -1 else svd_rank
+    logging.debug(f"adjust_tensor_dims: Input svd_rank={svd_rank}, up_0 shape={up_0.shape}, computed target_rank={target_rank}, method={method}, apply_svd={apply_svd}")
 
     out = {}
     for lora_name, (up, down, alpha) in ups_downs_alphas.items():
+        logging.debug(f"adjust_tensor_dims: Processing '{lora_name}' - up shape={up.shape}, down shape={down.shape}, alpha={alpha}")
         if up.shape[1] != target_rank:
             if not apply_svd:
                 raise ValueError(f"LoRA up tensors have different shapes: {up.shape} vs {up_0.shape}. "
                                  f"Turn on apply_svd to True to resize them.")
+            logging.debug(f"adjust_tensor_dims: Resizing '{lora_name}' from rank {up.shape[1]} to {target_rank} using method '{method}'")
             original_dtype = up.dtype
 
             # Choose resize method based on 'method' parameter
@@ -95,6 +98,9 @@ def adjust_tensor_dims(
 
             down = down.to(device="cpu", dtype=original_dtype)
             up = up.to(device="cpu", dtype=original_dtype)
+            logging.debug(f"adjust_tensor_dims: After resize '{lora_name}' - up shape={up.shape}, down shape={down.shape}")
+        else:
+            logging.debug(f"adjust_tensor_dims: '{lora_name}' already at target rank, no resize needed")
         out[lora_name] = (up, down, alpha)
     return out
 
@@ -459,7 +465,9 @@ def resize_lora_rank_energy_rsvd(
     down_ = to_2d(down)
 
     r0 = down_.shape[0]
+    logging.debug(f"energy_rSVD: Input rank r0={r0}, target new_dim={new_dim}, up shape={up_.shape}, down shape={down_.shape}")
     if new_dim >= r0:
+        logging.debug(f"energy_rSVD: Early exit - new_dim >= r0, returning original tensors")
         return down, up  # nothing to do
 
     # ---- Phase 1: Energy pruning ----
@@ -470,6 +478,7 @@ def resize_lora_rank_energy_rsvd(
 
     # Number of components to keep before SVD
     k = min(int(new_dim * energy_keep_ratio), r0)
+    logging.debug(f"energy_rSVD: Calculated k={k} (energy_keep_ratio={energy_keep_ratio}, new_dim={new_dim}, r0={r0})")
 
     # Top-k indices
     idx = torch.topk(energy, k, largest=True).indices
@@ -477,18 +486,23 @@ def resize_lora_rank_energy_rsvd(
 
     up_k = up_[:, idx]
     down_k = down_[idx, :]
+    logging.debug(f"energy_rSVD: After pruning - up_k shape={up_k.shape}, down_k shape={down_k.shape}")
 
     # ---- Early exit: pure pruning ----
     if k == new_dim:
+        logging.debug(f"energy_rSVD: Early exit - k == new_dim, using pure pruning (no SVD refinement)")
         up_new = up_k
         down_new = down_k
 
     else:
         # ---- Phase 2: rSVD refinement ----
+        logging.debug(f"energy_rSVD: Entering SVD refinement path (k={k} != new_dim={new_dim})")
         Wk = up_k @ down_k
+        logging.debug(f"energy_rSVD: Wk shape={Wk.shape}")
 
         rank = new_dim
         q = min(rank + oversample, min(Wk.shape))
+        logging.debug(f"energy_rSVD: SVD parameters - rank={rank}, q={q}, niter={niter}")
 
         U, S, V = torch.svd_lowrank(Wk, q=q, niter=niter)
         Vh = V.transpose(-2, -1)
@@ -496,10 +510,12 @@ def resize_lora_rank_energy_rsvd(
         U = U[:, :rank]
         S = S[:rank]
         Vh = Vh[:rank, :]
+        logging.debug(f"energy_rSVD: After SVD slicing - U shape={U.shape}, S shape={S.shape}, Vh shape={Vh.shape}")
 
         S_sqrt = torch.sqrt(S)
         up_new = U * S_sqrt.unsqueeze(0)
         down_new = S_sqrt.unsqueeze(1) * Vh
+        logging.debug(f"energy_rSVD: After scaling - up_new shape={up_new.shape}, down_new shape={down_new.shape}")
 
     # ---- restore shapes ----
     if len(up_shape) == 4:
@@ -508,8 +524,9 @@ def resize_lora_rank_energy_rsvd(
         down_new = down_new.unsqueeze(-1).unsqueeze(-1)
 
     # ---- safety checks ----
-    assert up_new.shape[1] == new_dim
-    assert down_new.shape[0] == new_dim
+    logging.debug(f"energy_rSVD: Final shapes before return - up_new={up_new.shape}, down_new={down_new.shape}, expected rank={new_dim}")
+    assert up_new.shape[1] == new_dim, f"up_new rank mismatch: {up_new.shape[1]} != {new_dim}"
+    assert down_new.shape[0] == new_dim, f"down_new rank mismatch: {down_new.shape[0]} != {new_dim}"
 
     return down_new, up_new
 

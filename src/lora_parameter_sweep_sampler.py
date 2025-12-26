@@ -233,11 +233,86 @@ class LoRAParameterSweepSampler:
                 except ValueError as e:
                     raise ValueError(f"Invalid parameter_values_2 format: {e}")
 
+        # Validate parameter combinations and filter invalid ones
+        method_name = merge_context['method']['name']
+        valid_combinations = []
+        filtered_combinations = []
+
+        if dual_mode:
+            # Validate all parameter combinations
+            for param_value in param_values:
+                for param_value_2 in param_values_2:
+                    # Create test settings dict
+                    test_settings = copy.deepcopy(method_settings)
+                    test_settings[parameter_name] = param_value
+                    test_settings[parameter_name_2] = param_value_2
+
+                    # Validate using MergeParameterValidator
+                    from .validation import MergeParameterValidator
+                    validation_result = MergeParameterValidator.validate_method_args(
+                        method_name, test_settings
+                    )
+
+                    if validation_result["valid"]:
+                        valid_combinations.append((param_value, param_value_2))
+                    else:
+                        filtered_combinations.append((param_value, param_value_2, validation_result["errors"]))
+        else:
+            # Validate single parameter values
+            for param_value in param_values:
+                # Create test settings dict
+                test_settings = copy.deepcopy(method_settings)
+                test_settings[parameter_name] = param_value
+
+                # Validate using MergeParameterValidator
+                from .validation import MergeParameterValidator
+                validation_result = MergeParameterValidator.validate_method_args(
+                    method_name, test_settings
+                )
+
+                if validation_result["valid"]:
+                    valid_combinations.append(param_value)
+                else:
+                    filtered_combinations.append((param_value, validation_result["errors"]))
+
+        # Log filtered combinations
+        if filtered_combinations:
+            logging.warning(f"\n{'='*80}")
+            logging.warning(f"PM LoRAParameterSweepSampler: {len(filtered_combinations)} invalid parameter combination(s) filtered out:")
+            logging.warning(f"{'='*80}")
+            for combo in filtered_combinations:
+                if dual_mode:
+                    param_val, param_val_2, errors = combo
+                    logging.warning(f"  ✗ {parameter_name}={param_val}, {parameter_name_2}={param_val_2}")
+                else:
+                    param_val, errors = combo
+                    logging.warning(f"  ✗ {parameter_name}={param_val}")
+                for error in errors:
+                    logging.warning(f"      → {error['message']}")
+            logging.warning(f"{'='*80}\n")
+
+        # Check if we have any valid combinations
+        if not valid_combinations:
+            raise ValueError(
+                f"All parameter combinations are invalid! Check the console warnings above for details. "
+                f"Adjust your parameter ranges to ensure at least one valid combination."
+            )
+
+        # Update param_values with only valid combinations
+        if dual_mode:
+            # Rebuild param_values and param_values_2 from valid combinations
+            param_values = sorted(list(set(combo[0] for combo in valid_combinations)))
+            param_values_2 = sorted(list(set(combo[1] for combo in valid_combinations)))
+            # Keep only valid combinations
+            valid_combination_set = set(valid_combinations)
+        else:
+            param_values = valid_combinations
+
         # Calculate total images and validate limit
-        total_images = len(param_values) * len(param_values_2) if dual_mode else len(param_values)
+        total_images = len(valid_combinations)
         if total_images > 64:
             raise ValueError(
-                f"Total number of images ({total_images}) exceeds maximum allowed (64). "
+                f"Total number of valid images ({total_images}) exceeds maximum allowed (64). "
                 f"{'Reduce parameter value counts or use single parameter mode.' if dual_mode else 'Reduce the number of parameter values.'}"
             )
 
@@ -266,64 +341,64 @@ class LoRAParameterSweepSampler:
 
         # Sample for each parameter value (or parameter value combination in dual mode)
         if dual_mode:
-            # Dual parameter mode: nested loops for n × m sampling
-            for i, param_value in enumerate(param_values):
-                for j, param_value_2 in enumerate(param_values_2):
-                    sample_num = i * len(param_values_2) + j + 1
+            # Dual parameter mode: iterate through valid combinations only
+            sample_num = 0
+            for param_value, param_value_2 in valid_combinations:
+                sample_num += 1
 
-                    # Create a deep copy of merge context and update both parameters
-                    context = copy.deepcopy(merge_context)
-                    if 'settings' not in context['method']:
-                        context['method']['settings'] = {}
-                    context['method']['settings'][parameter_name] = param_value
-                    context['method']['settings'][parameter_name_2] = param_value_2
+                # Create a deep copy of merge context and update both parameters
+                context = copy.deepcopy(merge_context)
+                if 'settings' not in context['method']:
+                    context['method']['settings'] = {}
+                context['method']['settings'][parameter_name] = param_value
+                context['method']['settings'][parameter_name_2] = param_value_2
 
-                    logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Merging with "
-                                f"{parameter_name}={param_value}, {parameter_name_2}={param_value_2}")
+                logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Merging with "
+                            f"{parameter_name}={param_value}, {parameter_name_2}={param_value_2}")
 
-                    # Perform merge with updated parameters
-                    merged_lora, _ = merger.lora_mergekit(
-                        method=context['method'],
-                        components=context['components'],
-                        strengths=context['strengths'],
-                        lambda_=context['lambda_'],
-                        device=context['device'],
-                        dtype=context['dtype']
-                    )
+                # Perform merge with updated parameters
+                merged_lora, _ = merger.lora_mergekit(
+                    method=context['method'],
+                    components=context['components'],
+                    strengths=context['strengths'],
+                    lambda_=context['lambda_'],
+                    device=context['device'],
+                    dtype=context['dtype']
+                )
 
-                    # Apply merged LoRA to model
-                    new_model_patcher = model.clone()
-                    new_model_patcher.add_patches(merged_lora['lora'], merged_lora['strength_model'])
+                # Apply merged LoRA to model
+                new_model_patcher = model.clone()
+                new_model_patcher.add_patches(merged_lora['lora'], merged_lora['strength_model'])
 
-                    # Sample image
-                    logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Sampling image")
-                    denoised, _ = ksampler.sample(
-                        model=new_model_patcher,
-                        add_noise=add_noise,
-                        noise_seed=noise_seed,
-                        cfg=cfg,
-                        positive=positive,
-                        negative=negative,
-                        sampler=sampler,
-                        sigmas=sigmas,
-                        latent_image=latent_image,
-                    )
+                # Sample image
+                logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Sampling image")
+                denoised, _ = ksampler.sample(
+                    model=new_model_patcher,
+                    add_noise=add_noise,
+                    noise_seed=noise_seed,
+                    cfg=cfg,
+                    positive=positive,
+                    negative=negative,
+                    sampler=sampler,
+                    sigmas=sigmas,
+                    latent_image=latent_image,
+                )
 
-                    latents_out.append(denoised)
+                latents_out.append(denoised)
 
-                    # Decode to image for annotation
-                    image = vae.decode(denoised['samples'])
-                    if len(image.shape) == 5:
-                        image = image.reshape(-1, image.shape[-3], image.shape[-2], image.shape[-1])
-                    image = image.squeeze(0)  # Remove batch dimension
+                # Decode to image for annotation
+                image = vae.decode(denoised['samples'])
+                if len(image.shape) == 5:
+                    image = image.reshape(-1, image.shape[-3], image.shape[-2], image.shape[-1])
+                image = image.squeeze(0)  # Remove batch dimension
 
-                    # Annotate image with both parameters
-                    annotated_image = self.annotate_image(parameter_name, param_value, image,
-                                                         parameter_name_2, param_value_2)
-                    images_out.append(annotated_image)
+                # Annotate image with both parameters
+                annotated_image = self.annotate_image(parameter_name, param_value, image,
+                                                     parameter_name_2, param_value_2)
+                images_out.append(annotated_image)
 
-                    # Update overall progress
-                    pbar.update(1)
+                # Update overall progress
+                pbar.update(1)
         else:
             # Single parameter mode (backward compatible)
             for i, param_value in enumerate(param_values):
@@ -383,7 +458,12 @@ class LoRAParameterSweepSampler:
         # Create grid (2D if dual mode, horizontal if single mode)
         if images_out:
             if dual_mode:
-                grid_image = self.create_grid(images_out, rows=len(param_values))
+                # Calculate rows based on actual valid combinations
+                # Try to make grid as square as possible
+                import math
+                num_images = len(images_out)
+                rows = int(math.sqrt(num_images))
+                grid_image = self.create_grid(images_out, rows=rows)
             else:
                 grid_image = self.create_grid(images_out)
         else:

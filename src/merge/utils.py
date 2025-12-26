@@ -208,3 +208,80 @@ def apply_weights_to_tensors(
         ref: tensor_parameters[ref]["weight"] * tensors[ref]
         for ref in tensors.keys()
     }
+
+
+def simple_weighted_average(
+    tensors: Dict[str, torch.Tensor],
+    weights: Dict[str, float],
+    normalize: bool = True,
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None
+) -> torch.Tensor:
+    """
+    Compute simple weighted average of tensors.
+
+    Used for CLIP layer merging, provides straightforward linear interpolation
+    between multiple LoRA tensors.
+
+    Args:
+        tensors: Dictionary mapping LoRA names to their tensors
+        weights: Dictionary mapping LoRA names to their weight values
+        normalize: Whether to normalize weights to sum to 1 (default: True)
+                  If False, uses raw weighted sum
+        device: Optional device to perform computation on
+        dtype: Optional dtype for computation
+
+    Returns:
+        Weighted average tensor
+
+    Example:
+        >>> tensors = {
+        ...     "lora1": torch.tensor([1.0, 2.0, 3.0]),
+        ...     "lora2": torch.tensor([4.0, 5.0, 6.0])
+        ... }
+        >>> weights = {"lora1": 0.3, "lora2": 0.7}
+        >>> result = simple_weighted_average(tensors, weights)
+        >>> # result ≈ [3.1, 4.1, 5.1] (0.3 * [1,2,3] + 0.7 * [4,5,6])
+
+    Note:
+        All tensors must have the same shape. If normalize=True and weights sum
+        to zero, returns zeros with the same shape as input tensors.
+    """
+    if not tensors:
+        raise ValueError("Cannot compute weighted average of empty tensor dict")
+
+    # Ensure all LoRAs in tensors have weights
+    missing_weights = set(tensors.keys()) - set(weights.keys())
+    if missing_weights:
+        raise ValueError(f"Missing weights for LoRAs: {missing_weights}")
+
+    # Move tensors to device/dtype if specified
+    if device is not None or dtype is not None:
+        tensors = {
+            name: tensor.to(device=device if device else tensor.device,
+                           dtype=dtype if dtype else tensor.dtype)
+            for name, tensor in tensors.items()
+        }
+
+    # Extract weights in same order as tensors
+    weight_list = [weights[name] for name in tensors.keys()]
+    weight_sum = sum(weight_list)
+
+    # Compute weighted sum
+    result = None
+    for name, weight_val in zip(tensors.keys(), weight_list):
+        weighted_tensor = tensors[name] * weight_val
+        if result is None:
+            result = weighted_tensor
+        else:
+            result = result + weighted_tensor
+
+    # Normalize if requested
+    if normalize and weight_sum != 0:
+        result = result / weight_sum
+    elif normalize and weight_sum == 0:
+        # If all weights are zero, return zeros
+        logging.warning("All weights sum to zero, returning zero tensor")
+        result = torch.zeros_like(next(iter(tensors.values())))
+
+    return result

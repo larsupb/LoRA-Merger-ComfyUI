@@ -12,6 +12,21 @@ from .config import (
     ATTENTION_MLP_LAYERS,
 )
 
+# CLIP layer key prefixes for detection
+CLIP_KEY_PREFIXES = {
+    # ComfyUI internal CLIP formats
+    'clip_l.',  # CLIP-L (OpenAI CLIP Large)
+    'clip_g.',  # CLIP-G (OpenCLIP bigG)
+    'clip_h.',  # CLIP-H (OpenCLIP Huge)
+    # LoRA file formats
+    'lora_te',  # SD1.5 text encoder
+    'text_encoder',  # Generic text encoder
+    'lora_te1_text_model',  # SDXL text encoder 1
+    'lora_te2_text_model',  # SDXL text encoder 2
+    'text_model',  # Generic text model
+    'transformer.text_model',  # Transformer text model
+}
+
 
 def detect_lora_architecture(patch_dict: LORA_KEY_DICT, sample_size: int = 20) -> Tuple[str, Dict[str, Any]]:
     """
@@ -128,6 +143,31 @@ def detect_lora_architecture(patch_dict: LORA_KEY_DICT, sample_size: int = 20) -
         metadata["patterns_found"] = patterns_found
 
     return "Unknown", metadata
+
+
+def is_clip_layer(key) -> bool:
+    """
+    Determine if a layer key belongs to CLIP/text encoder layers.
+
+    Args:
+        key: Layer key (can be string or ComfyUI tuple format)
+
+    Returns:
+        True if the key is a CLIP layer, False otherwise
+
+    Examples:
+        >>> is_clip_layer("lora_te_text_model_encoder_layers_0_self_attn_q_proj.lora_down.weight")
+        True
+        >>> is_clip_layer("lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight")
+        False
+        >>> is_clip_layer("text_encoder.encoder.layers.11.mlp.fc1.lora_up.weight")
+        True
+    """
+    # Handle tuple keys from ComfyUI
+    key_str = str(key[0]) if isinstance(key, tuple) else str(key)
+
+    # Check if key starts with any CLIP prefix
+    return any(key_str.startswith(prefix) for prefix in CLIP_KEY_PREFIXES)
 
 
 class LayerFilter:

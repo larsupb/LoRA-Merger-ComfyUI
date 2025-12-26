@@ -3,7 +3,6 @@ import folder_paths
 import comfy
 import comfy.lora
 import comfy.utils
-from nodes import LoraLoader
 
 from .merge.utils import parse_layer_filter, apply_layer_filter
 
@@ -118,27 +117,27 @@ class LoraPowerStacker:
     CATEGORY = "LoRA PowerMerge"
     DESCRIPTION = """Widget-based LoRA stacker for PowerMerge workflow.
 
-Outputs:
-- LoRAStack: Processed model weights (filtered by layer_filter)
-- LoRAWeights: Strength metadata for each LoRA
-- LoRARawDict: Original raw state dicts (preserves CLIP weights)
-- CLIP: Modified CLIP model with all LoRAs applied
+Collects multiple LoRAs and their strengths for merging. Both UNet and CLIP layers are included in the stack and will be merged together in the PM LoRA Merger node.
 
-Use the widget to add/remove LoRAs dynamically. Connect LoRARawDict to LoRA Select to preserve CLIP weights when saving merged LoRAs."""
+Outputs:
+- LoRAStack: All LoRA patches (UNet + CLIP layers, filtered by layer_filter)
+- LoRAWeights: Strength metadata for each LoRA (strength_model and strength_clip)
+
+Use the widget to add/remove LoRAs dynamically. CLIP layers are now merged as part of the merge process, so no need to apply them here."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
-                "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
+                "model": ("MODEL", {"tooltip": "The diffusion model used to load LoRA UNet key mappings."}),
+                "clip": ("CLIP", {"tooltip": "The CLIP model used to load LoRA CLIP key mappings."}),
             },
             "optional": FlexibleOptionalInputType(any_type),
             "hidden": {},
         }
 
-    RETURN_TYPES = ("LoRAStack", "LoRAWeights", "LoRARawDict", "CLIP")
-    RETURN_NAMES = ("LoRAStack", "LoRAWeights", "LoRARawDict", "CLIP")
+    RETURN_TYPES = ("LoRAStack", "LoRAWeights")
+    RETURN_NAMES = ("LoRAStack", "LoRAWeights")
     FUNCTION = "stack_loras_widget"
 
     def stack_loras_widget(self, model, clip, **kwargs):
@@ -148,15 +147,16 @@ Use the widget to add/remove LoRAs dynamically. Connect LoRARawDict to LoRA Sele
         layer_filter = kwargs.pop("layer_filter", "full")
         layer_filter = parse_layer_filter(layer_filter)
 
-        # Build key_map for LoRA loading
+        # Build key_map for LoRA loading (includes both UNet and CLIP keys)
         key_map = {}
         if model is not None:
             key_map = comfy.lora.model_lora_keys_unet(model.model, key_map)
+        if clip is not None:
+            key_map = comfy.lora.model_lora_keys_clip(clip.cond_stage_model, key_map)
 
         # Initialize outputs
         lora_patch_dicts = {}
         lora_strengths = {}
-        lora_raw_dicts = {}  # Store raw LoRA state dicts for CLIP weights
 
         # Track how many LoRAs were loaded
         loaded_count = 0
@@ -205,23 +205,21 @@ Use the widget to add/remove LoRAs dynamically. Connect LoRARawDict to LoRA Sele
                     # Get pretty name (without extension)
                     lora_name_pretty = os.path.splitext(os.path.basename(lora_file))[0]
 
-                    # Load LoRA into patch dict
+                    # Load LoRA into patch dict (includes both UNet and CLIP layers)
                     patch_dict = comfy.lora.load_lora(lora_raw, key_map)
 
-                    # Apply layer filter
+                    # Apply layer filter (applies to both UNet and CLIP layers)
                     patch_dict = apply_layer_filter(patch_dict, layer_filter)
 
                     # Store in outputs
                     lora_patch_dicts[lora_name_pretty] = patch_dict
                     lora_strengths[lora_name_pretty] = {
                         'strength_model': strength_model,
+                        'strength_clip': strength_clip,
                     }
-                    lora_raw_dicts[lora_name_pretty] = lora_raw  # Store raw state dict
 
-                    # Apply to CLIP
-                    # Note: We need a dummy model for LoraLoader, but we only care about CLIP output
-                    # So we'll use the standard LoraLoader node's load_lora method
-                    _, clip = LoraLoader().load_lora(model, clip, lora_file, strength_model, strength_clip)
+                    # CLIP layers are now part of patch_dict and will be merged
+                    # in the PM LoRA Merger node, so we don't apply them here
 
                     loaded_count += 1
 
@@ -231,4 +229,4 @@ Use the widget to add/remove LoRAs dynamically. Connect LoRARawDict to LoRA Sele
 
         print(f"[{self.NAME}] Loaded {loaded_count} LoRAs")
 
-        return (lora_patch_dicts, lora_strengths, lora_raw_dicts, clip)
+        return (lora_patch_dicts, lora_strengths)
