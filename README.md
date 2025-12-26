@@ -10,10 +10,12 @@ This is an enhanced fork of laksjdjf's [LoRA Merger](https://github.com/laksjdjf
 
 - **8+ Merge Algorithms**: Task Arithmetic, TIES, DARE, DELLA, Breadcrumbs, SLERP, and more
 - **Mergekit Integration**: Production-grade merge methods from Arcee AI's Mergekit library
+- **6 Architecture Support**: SD1.5, SDXL, DiT, Flux, Wan 2.2, Qwen Image Edit, and zImage with automatic detection
+- **Spectral Norm Regularization**: Prevent layer dominance with advanced weight normalization
 - **SVD Support**: Full, randomized, and energy-based SVD decomposition with dynamic rank selection
+- **Intelligent Search**: Real-time searchable LoRA selection in Power Stacker for large collections
 - **Modular Architecture**: Clean separation of concerns with focused, single-responsibility modules
-- **DiT Architecture Support**: Automatic layer grouping for Diffusion Transformer models
-- **Selective Layer Merging**: Filter by attention layers, MLP layers, or custom patterns
+- **Selective Layer Merging**: Architecture-agnostic filters (attn-only, mlp-only, attn-mlp, custom)
 - **Comprehensive Validation**: Runtime type checking and structured error reporting
 - **Thread-Safe Processing**: Parallel processing with device-aware workload distribution
 
@@ -496,23 +498,30 @@ LoRA Stack → Decompose → Method Node (SLERP) → Merger (with MergeContext o
 ### Power Stacker Node
 
 #### PM LoRA Power Stacker
-Advanced stacking with per-LoRA configuration and dynamic input management.
+Advanced stacking with per-LoRA configuration, dynamic input management, and intelligent search.
 
 ![pm-lora_stacker.png](assets/pm-lora_stacker.png)
 
 **Features:**
 - **Dynamic LoRA inputs**: Add unlimited LoRAs with individual strength controls via widget UI
-- **Built-in search**: Click on any LoRA name to open a searchable dropdown list
+- **Intelligent search bar**: Click on any LoRA name to open a searchable dropdown with real-time filtering
 - **Per-LoRA strengths**: Separate strength_model and strength_clip for each LoRA
-- **Architecture detection**: Automatically identifies SD vs DiT LoRAs
+- **Architecture detection**: Automatically identifies all 6 supported architectures (SD, DiT, Flux, Wan, Qwen, zImage)
 - **Layer filtering**: Architecture-agnostic preset filters (full, attn-only, mlp-only, attn-mlp)
 - **CLIP integration**: Automatically applies all LoRAs to CLIP model and preserves CLIP weights in outputs
 
-**Usage:**
-- Click "➕ Add Lora" to add a new LoRA slot
-- Click on the LoRA name field to open a searchable list of available LoRAs
-- Type to filter the list in real-time
-- Toggle individual LoRAs on/off with the checkbox
+**Search Bar Usage:**
+1. Click "➕ Add Lora" to add a new LoRA slot
+2. Click on the LoRA name field to open the searchable dropdown
+3. **Type to filter**: Real-time search filters the list as you type
+4. **Select**: Click a LoRA from the filtered results to select it
+5. **Enable/disable**: Toggle individual LoRAs on/off with the checkbox without removing them
+
+**Benefits:**
+- **Fast LoRA selection**: Quickly find LoRAs in large collections (hundreds of files)
+- **No manual typing**: Avoid typos by selecting from filtered list
+- **Visual feedback**: See all matching LoRAs instantly as you type
+- **Efficient workflow**: Add multiple LoRAs quickly without scrolling through long lists
 
 ## SVD and Decomposition
 
@@ -575,23 +584,115 @@ filtered_patches = filter.apply(lora_patches)
 - **Balanced merging**: Use `"attn-mlp"` to exclude projection and normalization layers
 - **Full merge**: Use `"full"` to merge all layer types
 
+## Spectral Norm Regularization
+
+Spectral norm regularization prevents any single layer from dominating the merge due to large weight magnitudes, leading to more stable and balanced merges.
+
+### What is Spectral Norm?
+
+The spectral norm of a matrix is its maximum singular value, representing the Lipschitz constant of the linear transformation. In the context of LoRA merging, it measures how much a layer can amplify or attenuate signals.
+
+### How It Works
+
+The regularization process:
+1. Computes the spectral norm (max singular value) for each weight tensor using power iteration
+2. Finds the maximum spectral norm across all layers
+3. Scales all weights so that `max_spectral_norm = target_scale`
+
+This ensures no single layer has disproportionately large weights that could destabilize the merge.
+
+### Usage
+
+```python
+from src.utils.spectral_norm import apply_spectral_norm
+
+# Apply spectral norm regularization to LoRA weights
+regularized_lora = apply_spectral_norm(
+    lora_patches,
+    scale=1.0,        # Target maximum spectral norm
+    num_iter=10,      # Power iteration count (higher = more accurate)
+    device=device
+)
+```
+
+### Scale Parameter Guidelines
+
+- **0.1-0.5**: Conservative scaling, prevents overfitting, good for merging many LoRAs
+- **1.0**: Neutral scaling, standard normalization
+- **2.0-5.0**: Allows stronger effects, useful for emphasizing specific LoRAs
+
+### Benefits
+
+- **Stability**: Prevents numerical instability from extreme weight values
+- **Balance**: Ensures all layers contribute proportionally to the merge
+- **Quality**: Reduces artifacts from weight magnitude mismatches
+- **Flexibility**: Works with any merge method (TIES, DARE, SLERP, etc.)
+
 ## Architecture Support
 
-### Stable Diffusion LoRAs
-Automatic detection and handling of:
-- **UNet blocks**: Input, middle, output blocks
-- **Attention layers**: attn1 (self-attention), attn2 (cross-attention)
-- **Feed-forward**: ff.net layers
-- **CLIP text encoder**: text_model layers
+The system automatically detects LoRA architecture and applies appropriate decomposition and filtering strategies. Currently supports **6 major architectures**:
 
-### DiT (Diffusion Transformer) LoRAs
-Automatic layer grouping for:
-- **Joint blocks**: Unified transformer blocks
-- **Attention**: Multi-head attention layers
-- **MLP**: Feed-forward networks
+### Stable Diffusion (SD1.5 / SDXL)
+UNet architecture with underscore-separated naming:
+- **UNet blocks**: `down_blocks`, `up_blocks`, `mid_block`
+- **Attention layers**: `attn1` (self-attention), `attn2` (cross-attention)
+- **Feed-forward**: `ff` layers
+- **CLIP text encoder**: `text_model` layers
+- **Key pattern**: `lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q`
+
+### DiT (Diffusion Transformer)
+Flat transformer with dot-separated naming:
+- **Transformer layers**: `diffusion_model.layers.N`
+- **Attention**: `attention` (qkv projections)
+- **MLP**: `mlp`, `feed_forward`
 - **Positional encoding**: Learned position embeddings
+- **Key pattern**: `diffusion_model.layers.13.attention.qkv.weight`
 
-The system automatically detects architecture and applies appropriate decomposition strategies.
+### Flux
+Modern architecture with dual-block structure:
+- **Double blocks**: `double_blocks` (parallel image/text processing)
+- **Single blocks**: `single_blocks` (unified processing)
+- **Image attention**: `img_attn_proj`, `img_attn_qkv`
+- **Text attention**: `txt_attn_proj`, `txt_attn_qkv`
+- **Image MLP**: `img_mlp_0`, `img_mlp_2`
+- **Text MLP**: `txt_mlp_0`, `txt_mlp_2`
+- **Key pattern**: `lora_unet_double_blocks_0_img_attn_proj.alpha`
+
+### Wan 2.2
+Transformer with dot-separated naming and dual attention:
+- **Transformer blocks**: `diffusion_model.blocks.N`
+- **Self attention**: `self_attn.q`, `self_attn.k`, `self_attn.v`
+- **Cross attention**: `cross_attn.q`, `cross_attn.k`, `cross_attn.v`
+- **Feed-forward**: `ffn` (w1, w2, w3)
+- **Key pattern**: `diffusion_model.blocks.0.cross_attn.q.lora_A.weight`
+
+### Qwen Image Edit
+Transformer blocks with attention and dual MLPs:
+- **Transformer blocks**: `transformer_blocks.N`
+- **Attention**: `.attn.` (to_k, to_q, to_v, add_k_proj, add_q_proj, add_v_proj)
+- **Image MLP**: `img_mlp`
+- **Text MLP**: `txt_mlp`
+- **Key pattern**: `transformer_blocks.0.attn.to_k.alpha`
+
+### zImage
+Pure DiT architecture with adaptive layer normalization:
+- **Transformer layers**: `diffusion_model.layers.N`
+- **Attention**: `attention.to_k`, `attention.to_q`, `attention.to_v`
+- **Feed-forward**: `feed_forward` (w1, w2, w3)
+- **Adaptive LayerNorm**: `adaLN_modulation` (unique to zImage)
+- **Key pattern**: `diffusion_model.layers.0.attention.to_k.lora_A.weight`
+
+### Architecture Detection
+
+The layer filter system automatically detects architecture on LoRA load and logs the result:
+
+```
+Detected Wan 2.2 architecture (400 keys)
+Detected Flux architecture (584 keys)
+Detected Qwen Image Edit architecture (272 keys)
+```
+
+This enables architecture-agnostic preset filters (`"attn-only"`, `"mlp-only"`, `"attn-mlp"`) to work seamlessly across all supported architectures.
 
 
 ## License
