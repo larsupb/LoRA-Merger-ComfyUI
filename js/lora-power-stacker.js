@@ -1,16 +1,11 @@
 import { app } from "../../../scripts/app.js";
 import { ComfyWidgets } from "../../../scripts/widgets.js";
 
-const PROP_LABEL_SHOW_STRENGTHS = "Show Strengths";
-const PROP_VALUE_SHOW_STRENGTHS_SINGLE = "Single Strength";
-const PROP_VALUE_SHOW_STRENGTHS_SEPARATE = "Separate Model & Clip";
-
 // Default data structure for a LoRA widget
 const DEFAULT_LORA_WIDGET_DATA = {
     on: true,
     lora: null,
     strength: 1.0,
-    strengthTwo: null,
 };
 
 // Utility function to get list of available LoRAs
@@ -51,7 +46,6 @@ class PMLoraStackerWidget {
     }
 
     draw(ctx, node, widgetWidth, y, widgetHeight) {
-        const showModelAndClip = node.properties[PROP_LABEL_SHOW_STRENGTHS] === PROP_VALUE_SHOW_STRENGTHS_SEPARATE;
         const margin = 10;
         const innerMargin = 3;
 
@@ -89,10 +83,7 @@ class PMLoraStackerWidget {
 
         // Calculate available space for LoRA name
         const strengthWidth = 80;
-        const strengthCount = showModelAndClip ? 2 : 1;
-        const strengthsSpacing = innerMargin * 2;
-        const totalStrengthWidth = (strengthWidth * strengthCount) + (strengthsSpacing * (strengthCount - 1));
-        const reservedRightSpace = totalStrengthWidth + margin + innerMargin * 3;
+        const reservedRightSpace = strengthWidth + margin + innerMargin * 3;
 
         // LoRA name - use all available space
         const loraNameWidth = Math.max(100, widgetWidth - loraNameStartX - reservedRightSpace);
@@ -108,16 +99,9 @@ class PMLoraStackerWidget {
 
         posX = widgetWidth - margin - innerMargin;
 
-        // Strength controls (Clip)
+        // Strength control
         posX -= strengthWidth;
-        const clipStrength = showModelAndClip ? (this.value.strengthTwo ?? 1.0) : this.value.strength;
-        this.drawStrengthControl(ctx, posX, midY, strengthWidth, clipStrength, "clip");
-
-        // Strength controls (Model) - only if separate mode
-        if (showModelAndClip) {
-            posX -= strengthWidth + strengthsSpacing;
-            this.drawStrengthControl(ctx, posX, midY, strengthWidth, this.value.strength, "model");
-        }
+        this.drawStrengthControl(ctx, posX, midY, strengthWidth, this.value.strength, "strength");
 
         // Store the actual LoRA name width for mouse hit detection
         this.loraNameWidth = loraNameWidth;
@@ -193,26 +177,15 @@ class PMLoraStackerWidget {
                 return true;
             }
 
-            // Check strength controls
-            const showModelAndClip = node.properties[PROP_LABEL_SHOW_STRENGTHS] === PROP_VALUE_SHOW_STRENGTHS_SEPARATE;
-
-            if (this.hitAreas) {
-                // Check clip strength buttons
-                if (this.hitAreas.clip) {
-                    const result = this.checkStrengthHit(localX, localY, "clip", showModelAndClip);
-                    if (result) return true;
-                }
-
-                // Check model strength buttons (if in separate mode)
-                if (showModelAndClip && this.hitAreas.model) {
-                    const result = this.checkStrengthHit(localX, localY, "model", showModelAndClip);
-                    if (result) return true;
-                }
+            // Check strength control
+            if (this.hitAreas && this.hitAreas.strength) {
+                const result = this.checkStrengthHit(localX, localY, "strength");
+                if (result) return true;
             }
 
             // Check LoRA name area (for opening selector)
             const loraNameX = checkboxX + checkboxSize + innerMargin * 2;
-            const loraNameWidth = this.loraNameWidth || (showModelAndClip ? 200 : 280);
+            const loraNameWidth = this.loraNameWidth || 280;
             if (localX >= loraNameX && localX <= loraNameX + loraNameWidth &&
                 localY >= this.lastY && localY <= this.lastY + this.height) {
                 this.openLoraSelector(node, event);
@@ -223,61 +196,47 @@ class PMLoraStackerWidget {
         return false;
     }
 
-    checkStrengthHit(x, y, type, showModelAndClip) {
+    checkStrengthHit(x, y, type) {
         const areas = this.hitAreas[type];
         if (!areas) return false;
 
         // Check decrement button
         if (x >= areas.dec.x && x <= areas.dec.x + areas.dec.width &&
             y >= areas.dec.y && y <= areas.dec.y + areas.dec.height) {
-            this.adjustStrength(type, -0.05, showModelAndClip);
+            this.adjustStrength(type, -0.05);
             return true;
         }
 
         // Check increment button
         if (x >= areas.inc.x && x <= areas.inc.x + areas.inc.width &&
             y >= areas.inc.y && y <= areas.inc.y + areas.inc.height) {
-            this.adjustStrength(type, 0.05, showModelAndClip);
+            this.adjustStrength(type, 0.05);
             return true;
         }
 
         // Check value area (for direct input)
         if (x >= areas.val.x && x <= areas.val.x + areas.val.width &&
             y >= areas.val.y && y <= areas.val.y + areas.val.height) {
-            this.promptStrength(type, showModelAndClip);
+            this.promptStrength(type);
             return true;
         }
 
         return false;
     }
 
-    adjustStrength(type, delta, showModelAndClip) {
-        if (type === "clip" && showModelAndClip) {
-            this.value.strengthTwo = Math.round((this.value.strengthTwo ?? 1.0 + delta) * 100) / 100;
-        } else if (type === "clip" && !showModelAndClip) {
-            this.value.strength = Math.round((this.value.strength + delta) * 100) / 100;
-        } else if (type === "model") {
-            this.value.strength = Math.round((this.value.strength + delta) * 100) / 100;
-        }
+    adjustStrength(type, delta) {
+        this.value.strength = Math.round((this.value.strength + delta) * 100) / 100;
         app.graph.setDirtyCanvas(true);
     }
 
-    promptStrength(type, showModelAndClip) {
-        const currentValue = (type === "clip" && showModelAndClip)
-            ? (this.value.strengthTwo ?? 1.0)
-            : this.value.strength;
+    promptStrength(type) {
+        const currentValue = this.value.strength;
 
-        const newValue = prompt(`Enter ${type} strength:`, currentValue);
+        const newValue = prompt(`Enter strength:`, currentValue);
         if (newValue !== null) {
             const numValue = parseFloat(newValue);
             if (!isNaN(numValue)) {
-                if (type === "clip" && showModelAndClip) {
-                    this.value.strengthTwo = Math.round(numValue * 100) / 100;
-                } else if (type === "clip" && !showModelAndClip) {
-                    this.value.strength = Math.round(numValue * 100) / 100;
-                } else if (type === "model") {
-                    this.value.strength = Math.round(numValue * 100) / 100;
-                }
+                this.value.strength = Math.round(numValue * 100) / 100;
                 app.graph.setDirtyCanvas(true);
             }
         }
@@ -309,16 +268,7 @@ class PMLoraStackerWidget {
     }
 
     serializeValue() {
-        const showModelAndClip = this.node.properties[PROP_LABEL_SHOW_STRENGTHS] === PROP_VALUE_SHOW_STRENGTHS_SEPARATE;
-        const serialized = { ...this.value };
-
-        if (!showModelAndClip) {
-            delete serialized.strengthTwo;
-        } else {
-            serialized.strengthTwo = serialized.strengthTwo ?? serialized.strength;
-        }
-
-        return serialized;
+        return { ...this.value };
     }
 }
 
@@ -328,10 +278,6 @@ app.registerExtension({
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "PM LoRA Power Stacker") {
-            // Add property for strength display mode
-            nodeType.prototype.properties = nodeType.prototype.properties || {};
-            nodeType.prototype.properties[PROP_LABEL_SHOW_STRENGTHS] = PROP_VALUE_SHOW_STRENGTHS_SINGLE;
-
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function() {
                 if (onNodeCreated) {
@@ -501,104 +447,6 @@ app.registerExtension({
                 // For non-widget slots, call parent implementation if it exists
                 return LGraphNode.prototype.getSlotMenuOptions ?
                     LGraphNode.prototype.getSlotMenuOptions.call(this, slot) : null;
-            };
-
-            // Handle property changes
-            const onPropertyChanged = nodeType.prototype.onPropertyChanged;
-            nodeType.prototype.onPropertyChanged = function(property, value) {
-                if (onPropertyChanged) {
-                    onPropertyChanged.apply(this, arguments);
-                }
-
-                if (property === PROP_LABEL_SHOW_STRENGTHS) {
-                    // When switching to separate mode, initialize strengthTwo
-                    if (value === PROP_VALUE_SHOW_STRENGTHS_SEPARATE) {
-                        this.widgets.forEach(w => {
-                            if (w instanceof PMLoraStackerWidget && w.value.strengthTwo === null) {
-                                w.value.strengthTwo = w.value.strength;
-                            }
-                        });
-                    } else {
-                        // When switching to single mode, clear strengthTwo
-                        this.widgets.forEach(w => {
-                            if (w instanceof PMLoraStackerWidget) {
-                                w.value.strengthTwo = null;
-                            }
-                        });
-                    }
-                    app.graph.setDirtyCanvas(true);
-                }
-            };
-
-            // Add context menu for widgets
-            const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
-            nodeType.prototype.getExtraMenuOptions = function(_, options) {
-                if (getExtraMenuOptions) {
-                    getExtraMenuOptions.apply(this, arguments);
-                }
-
-                // Add property menu option
-                options.push({
-                    content: "Properties",
-                    callback: () => {
-                        const dialog = document.createElement("dialog");
-                        dialog.style.padding = "20px";
-                        dialog.style.borderRadius = "8px";
-                        dialog.style.border = "1px solid #555";
-                        dialog.style.backgroundColor = "#2a2a2a";
-                        dialog.style.color = "#ddd";
-
-                        const label = document.createElement("label");
-                        label.textContent = PROP_LABEL_SHOW_STRENGTHS + ": ";
-                        label.style.marginRight = "10px";
-
-                        const select = document.createElement("select");
-                        select.style.padding = "5px";
-                        select.style.backgroundColor = "#1a1a1a";
-                        select.style.color = "#ddd";
-                        select.style.border = "1px solid #555";
-
-                        [PROP_VALUE_SHOW_STRENGTHS_SINGLE, PROP_VALUE_SHOW_STRENGTHS_SEPARATE].forEach(opt => {
-                            const option = document.createElement("option");
-                            option.value = opt;
-                            option.textContent = opt;
-                            if (this.properties[PROP_LABEL_SHOW_STRENGTHS] === opt) {
-                                option.selected = true;
-                            }
-                            select.appendChild(option);
-                        });
-
-                        select.addEventListener("change", () => {
-                            this.properties[PROP_LABEL_SHOW_STRENGTHS] = select.value;
-                            if (this.onPropertyChanged) {
-                                this.onPropertyChanged(PROP_LABEL_SHOW_STRENGTHS, select.value);
-                            }
-                        });
-
-                        const closeBtn = document.createElement("button");
-                        closeBtn.textContent = "Close";
-                        closeBtn.style.marginTop = "15px";
-                        closeBtn.style.padding = "5px 15px";
-                        closeBtn.style.backgroundColor = "#4a9eff";
-                        closeBtn.style.color = "#fff";
-                        closeBtn.style.border = "none";
-                        closeBtn.style.borderRadius = "4px";
-                        closeBtn.style.cursor = "pointer";
-                        closeBtn.addEventListener("click", () => dialog.close());
-
-                        dialog.appendChild(label);
-                        dialog.appendChild(select);
-                        dialog.appendChild(document.createElement("br"));
-                        dialog.appendChild(closeBtn);
-
-                        document.body.appendChild(dialog);
-                        dialog.showModal();
-
-                        dialog.addEventListener("close", () => {
-                            document.body.removeChild(dialog);
-                        });
-                    }
-                });
             };
 
             // Override onConfigure to restore widgets from saved data

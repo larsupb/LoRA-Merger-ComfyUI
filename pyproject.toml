@@ -1,8 +1,8 @@
 [project]
 name = "lora-merger-comfyui"
-description = "An extension for merging LoRAs. Offers a wide range of LoRA merge techniques (including dare) and XY plots. XY plots require efficiency nodes."
-version = "2.2.1"
-license = "MIT"
+description = "An extension for merging LoRAs. Offers a wide range of LoRA merge techniques."
+version = "2.2.2"
+license = {file = "LICENSE"}
 
 [project.urls]
 Repository = "https://github.com/larsupb/LoRA-Merger-ComfyUI"

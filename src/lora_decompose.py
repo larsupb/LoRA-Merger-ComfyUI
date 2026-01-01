@@ -82,7 +82,8 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
                        decomposition_method="rSVD", svd_rank=-1, device=None):
         device, _ = map_device(device, "float32")
 
-        logging.info(f"Decomposing LoRAs with method: {decomposition_method}, SVD rank: {svd_rank}")
+        logging.info(f"Decomposing {len(key_dicts)} LoRAs: {list(key_dicts.keys())}")
+        logging.info(f"Decomposition method: {decomposition_method}, SVD rank: {svd_rank}")
 
         # check if key_dicts differs from the previous one
         lora_names_hash_new = self.compute_hash(list(key_dicts.keys()))
@@ -137,6 +138,14 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
             lora_key -> lora_name -> (up, down, alpha)
         """
         keys = list(analyse_keys(key_dicts))  # [:10]  # Limit to 100 keys for testing
+
+        # Analyze key overlap between LoRAs
+        lora_names = list(key_dicts.keys())
+        if len(lora_names) > 1:
+            # Count how many LoRAs share each key
+            shared_keys = sum(1 for key in keys if sum(1 for lora_dict in key_dicts.values() if key in lora_dict) > 1)
+            unique_keys = len(keys) - shared_keys
+            logging.info(f"Key overlap: {shared_keys} shared keys, {unique_keys} unique keys across {len(lora_names)} LoRAs")
 
         pbar = comfy.utils.ProgressBar(len(keys))
         start = time.time()

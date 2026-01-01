@@ -119,11 +119,13 @@ class LoraPowerStacker:
 
 Collects multiple LoRAs and their strengths for merging. Both UNet and CLIP layers are included in the stack and will be merged together in the PM LoRA Merger node.
 
+The same strength value is used for both UNet (strength_model) and CLIP (strength_clip) layers.
+
 Outputs:
 - LoRAStack: All LoRA patches (UNet + CLIP layers, filtered by layer_filter)
-- LoRAWeights: Strength metadata for each LoRA (strength_model and strength_clip)
+- LoRAWeights: Strength metadata for each LoRA (single strength applied to both model and clip)
 
-Use the widget to add/remove LoRAs dynamically. CLIP layers are now merged as part of the merge process, so no need to apply them here."""
+Use the widget to add/remove LoRAs dynamically."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -175,17 +177,10 @@ Use the widget to add/remove LoRAs dynamically. CLIP layers are now merged as pa
                 # Extract values
                 is_on = value.get('on', False)
                 lora_name = value.get('lora')
-                strength_model = value.get('strength', 1.0)
-
-                # Handle separate model/clip strengths
-                # If strengthTwo exists and is not None, use it for clip
-                # Otherwise use strength for both model and clip
-                strength_clip = value.get('strengthTwo')
-                if strength_clip is None:
-                    strength_clip = strength_model
+                strength = value.get('strength', 1.0)
 
                 # Skip if disabled or strength is zero
-                if not is_on or (strength_model == 0 and strength_clip == 0):
+                if not is_on or strength == 0:
                     continue
 
                 # Skip if no LoRA specified
@@ -203,7 +198,15 @@ Use the widget to add/remove LoRAs dynamically. CLIP layers are now merged as pa
                     lora_raw = comfy.utils.load_torch_file(lora_path, safe_load=True)
 
                     # Get pretty name (without extension)
-                    lora_name_pretty = os.path.splitext(os.path.basename(lora_file))[0]
+                    lora_name_base = os.path.splitext(os.path.basename(lora_file))[0]
+
+                    # Handle name collisions by adding suffix
+                    lora_name_pretty = lora_name_base
+                    collision_count = 1
+                    while lora_name_pretty in lora_patch_dicts:
+                        print(f"[{self.NAME}] WARNING: LoRA name collision detected for '{lora_name_base}'. Using '{lora_name_base}_{collision_count}' instead.")
+                        lora_name_pretty = f"{lora_name_base}_{collision_count}"
+                        collision_count += 1
 
                     # Load LoRA into patch dict (includes both UNet and CLIP layers)
                     patch_dict = comfy.lora.load_lora(lora_raw, key_map)
@@ -214,19 +217,17 @@ Use the widget to add/remove LoRAs dynamically. CLIP layers are now merged as pa
                     # Store in outputs
                     lora_patch_dicts[lora_name_pretty] = patch_dict
                     lora_strengths[lora_name_pretty] = {
-                        'strength_model': strength_model,
-                        'strength_clip': strength_clip,
+                        'strength_model': strength,
+                        'strength_clip': strength,
                     }
 
-                    # CLIP layers are now part of patch_dict and will be merged
-                    # in the PM LoRA Merger node, so we don't apply them here
-
                     loaded_count += 1
+                    print(f"[{self.NAME}] Loaded LoRA '{lora_name_pretty}' with strength {strength} ({len(patch_dict)} layers)")
 
                 except Exception as e:
                     print(f"[{self.NAME}] Error loading LoRA '{lora_name}': {e}")
                     continue
 
-        print(f"[{self.NAME}] Loaded {loaded_count} LoRAs")
+        print(f"[{self.NAME}] Loaded {loaded_count} LoRAs: {list(lora_patch_dicts.keys())}")
 
         return (lora_patch_dicts, lora_strengths)

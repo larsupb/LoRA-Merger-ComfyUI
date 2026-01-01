@@ -35,8 +35,6 @@ Outputs:
 This matches ComfyUI's standard LoraLoader behavior with both MODEL and CLIP inputs/outputs."""
 
     def apply_merged_lora(self, model, clip, lora):
-        print("I AM APPLYING HERE!!!!!!!!!!!")
-
         strength_model = lora.get("strength_model", 1.0)
         strength_clip = lora.get("strength_clip", 1.0)
 
