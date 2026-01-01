@@ -55,6 +55,10 @@ def calc_up_down_alphas(
     if len(owners) == 0:
         raise ValueError(f"Key {key} not found in any LoRA provided.")
 
+    # Log warning if only one owner (helpful for debugging merge failures)
+    if len(owners) == 1:
+        logging.debug(f"Key '{key}' found in only 1 LoRA: {owners[0]}")
+
     # Define tensor index positions
     down_idx, up_idx, alpha_idx = (1, 0, 2)
 
