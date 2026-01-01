@@ -594,12 +594,12 @@ The spectral norm of a matrix is its maximum singular value, representing the Li
 
 ### How It Works
 
-The regularization process:
+The regularization process uses **per-layer clipping**:
 1. Computes the spectral norm (max singular value) for each weight tensor using power iteration
-2. Finds the maximum spectral norm across all layers
-3. Scales all weights so that `max_spectral_norm = target_scale`
+2. For each layer: if spectral norm > target, scale the layer down to the target
+3. Layers already below the target are preserved unchanged
 
-This ensures no single layer has disproportionately large weights that could destabilize the merge.
+This prevents outlier layers from having excessive magnitude while preserving the overall LoRA effect for layers with reasonable magnitudes. Unlike global scaling (which would reduce all layers proportionally), per-layer clipping only affects layers that exceed the target.
 
 ### Usage
 

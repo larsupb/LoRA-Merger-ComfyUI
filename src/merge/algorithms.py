@@ -362,7 +362,6 @@ def nearswap_merge(
         tensor_parameters: Per-tensor parameters (weights)
         method_args: Method-specific arguments including:
             - similarity_threshold: Threshold for swapping (default 0.001)
-            - normalize: Whether to normalize output
             - lambda_: Output scaling factor
 
     Returns:
@@ -386,19 +385,13 @@ def nearswap_merge(
 
     second_model = list(weighted_tensors.values())[0]
 
-    # Calculate normalization divisor
-    divisor = 1.0
-    if method_args.get('normalize', False):
-        divisor = torch.tensor(2.0)
-        divisor[divisor.abs() < 1e-8] = 1
-
     result = mergekit_nearswap_merge(
         base_tensor=first_model,
         tensors=[second_model],
         t=method_args.get('similarity_threshold', 0.001)
     )
 
-    return result * method_args.get('lambda_', 1.0) / divisor
+    return result * method_args.get('lambda_', 1.0)
 
 
 def arcee_fusion(

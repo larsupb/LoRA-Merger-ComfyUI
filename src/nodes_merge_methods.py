@@ -629,10 +629,6 @@ class NearSwapMergeMethod:
                     "step": 0.0001,
                     "tooltip": "Similarity threshold for NearSwap merge.",
                 }),
-                "normalize": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "If true, the weights of all models contributing to a tensor will be normalized. Default behavior.",
-                }),
             },
         }
 
@@ -661,12 +657,11 @@ class NearSwapMergeMethod:
     then returns weight * secondary + (1 - weight) * base
     """
 
-    def get_method(self, similarity_threshold: float = 0.001, normalize: bool = True):
+    def get_method(self, similarity_threshold: float = 0.001):
         method_def = {
             "name": "nearswap",
             "settings": {
                 "similarity_threshold": similarity_threshold,
-                "normalize": normalize
             }
         }
         return (method_def,)

@@ -114,11 +114,11 @@ def apply_spectral_norm(
 
     This function:
     1. Computes the spectral norm (max singular value) for each weight tensor
-    2. Finds the maximum spectral norm across all layers
-    3. Scales all weights so that max_spectral_norm = target_scale
+    2. Clamps each layer's spectral norm to the target scale (if exceeded)
+    3. Preserves layers already below the target
 
-    This prevents any single layer from dominating the merge due to large weight
-    magnitudes, leading to more stable and balanced merges.
+    This prevents any single layer from having excessive magnitude while preserving
+    the overall LoRA effect for layers with reasonable magnitudes.
 
     Args:
         lora_patches: Dictionary of LoRA weights {layer_key: weight_tensor}
@@ -145,7 +145,8 @@ def apply_spectral_norm(
         factors, not learnable weights.
     """
     # Compute spectral norms for all non-alpha layers
-    spectral_norms = []
+    layer_spectral_norms = {}  # {key: spectral_norm_value}
+
     for key in lora_patches.keys():
         # Skip alpha values (LoRA scaling factors)
         if "alpha" in key.lower():
@@ -161,39 +162,51 @@ def apply_spectral_norm(
         # Compute spectral norm
         try:
             sn, _ = spectral_norm(weight, num_iter=num_iter, device=device)
-            spectral_norms.append(sn.cpu().item())
+            layer_spectral_norms[key] = sn.cpu().item()
         except Exception as e:
             logging.warning(f"Failed to compute spectral norm for {key}: {e}")
             continue
 
-    if not spectral_norms:
+    if not layer_spectral_norms:
         logging.warning("No valid spectral norms computed, returning original weights")
         return lora_patches
 
-    # Find maximum spectral norm across all layers
-    max_sn = max(spectral_norms)
+    # Find maximum spectral norm for logging purposes
+    max_sn = max(layer_spectral_norms.values())
 
     if max_sn < 1e-8:
         logging.warning(f"Maximum spectral norm is very small ({max_sn}), skipping regularization")
         return lora_patches
 
-    # Compute scaling factor
-    scale_factor = scale / max_sn
+    # Count how many layers will be clipped
+    num_clipped = sum(1 for sn in layer_spectral_norms.values() if sn > scale)
+    num_total = len(layer_spectral_norms)
 
     logging.info(
-        f"Spectral norm regularization: max_sn={max_sn:.4f}, "
-        f"target={scale:.4f}, scale_factor={scale_factor:.4f}"
+        f"Spectral norm regularization (per-layer clipping): "
+        f"max_sn={max_sn:.4f}, target={scale:.4f}, "
+        f"clipping {num_clipped}/{num_total} layers"
     )
 
-    # Apply scaling to all weight tensors
+    # Apply per-layer clamping: only scale layers that exceed the target
     regularized_patches = {}
     for key in lora_patches.keys():
         if "alpha" in key.lower():
             # Preserve alpha values unchanged
             regularized_patches[key] = lora_patches[key]
+        elif key not in layer_spectral_norms:
+            # Preserve non-weight tensors (0D/1D) unchanged
+            regularized_patches[key] = lora_patches[key]
         else:
-            # Scale weight tensors
-            regularized_patches[key] = lora_patches[key] * scale_factor
+            # Compute per-layer scale factor
+            layer_sn = layer_spectral_norms[key]
+            if layer_sn > scale:
+                # Clamp this layer to the target
+                layer_scale_factor = scale / layer_sn
+                regularized_patches[key] = lora_patches[key] * layer_scale_factor
+            else:
+                # Layer is already below target, preserve unchanged
+                regularized_patches[key] = lora_patches[key]
 
     return regularized_patches
 
