@@ -4,7 +4,7 @@ Merge algorithm implementations for LoRA Power-Merger.
 Contains all merge algorithm functions that operate on LoRA tensors:
 - Task arithmetic methods (TIES, DARE, DELLA, etc.)
 - Spherical interpolation methods (SLERP, NuSLERP, Karcher)
-- Specialized methods (SCE, NearSwap, Arcee Fusion)
+- Specialized methods (SCE, NearSwap)
 - Linear merge
 
 Each function follows the same signature expected by mergekit.
@@ -19,7 +19,6 @@ from mergekit.architecture import WeightInfo
 from mergekit.common import ModelReference, ModelPath, ImmutableMap
 from mergekit.io.tasks import GatherTensors
 from mergekit.merge_methods import REGISTERED_MERGE_METHODS
-from mergekit.merge_methods.arcee_fusion import ArceeFusionMerge
 from mergekit.merge_methods.generalized_task_arithmetic import GTATask
 from mergekit.merge_methods.karcher import KarcherMerge
 from mergekit.merge_methods.linear import LinearMergeTask
@@ -92,6 +91,14 @@ def generalized_task_arithmetic_merge(
     rescale_norm = method_args.get("rescale_norm", "default")
     if rescale_norm == "default":
         rescale_norm = RescaleNorm.l1 if getattr(method, "default_rescale", False) else None
+    elif rescale_norm == "none":
+        rescale_norm = None
+    elif rescale_norm == "l1":
+        rescale_norm = RescaleNorm.l1
+    elif rescale_norm == "l2":
+        rescale_norm = RescaleNorm.l2
+    elif rescale_norm == "linf":
+        rescale_norm = RescaleNorm.linf
 
     # Create and execute GTA task
     task = GTATask(
@@ -394,50 +401,6 @@ def nearswap_merge(
     return result * method_args.get('lambda_', 1.0)
 
 
-def arcee_fusion(
-    tensors: Dict[ModelReference, torch.Tensor],
-    gather_tensors: GatherTensors,
-    weight_info: WeightInfo,
-    tensor_parameters: Optional[ImmutableMap[ModelReference, Any]] = None,
-    method_args: Optional[Dict[str, Any]] = None,
-) -> torch.Tensor:
-    """
-    Merge LoRA tensors using Arcee Fusion method.
-
-    Proprietary fusion method from Arcee AI.
-
-    Args:
-        tensors: Dictionary mapping model references to tensors
-        gather_tensors: Mergekit GatherTensors object
-        weight_info: Weight metadata
-        tensor_parameters: Per-tensor parameters (weights)
-        method_args: Method-specific arguments including:
-            - lambda_: Output scaling factor
-
-    Returns:
-        Merged tensor (Arcee Fusion result scaled by lambda)
-    """
-    method_args = method_args or {}
-
-    # Apply weights to tensors
-    weighted_tensors = apply_weights_to_tensors(tensors, tensor_parameters)
-
-    # Ensure all tensors are contiguous (required by Arcee Fusion's view operations)
-    weighted_tensors = {k: v.contiguous() for k, v in weighted_tensors.items()}
-
-    # Use first model as base
-    first_model = list(weighted_tensors.keys())[0]
-
-    merge = ArceeFusionMerge()
-    task = merge.make_task(
-        output_weight=weight_info,
-        tensors=gather_tensors,
-        base_model=first_model,
-    )
-
-    return task.execute(tensors=weighted_tensors) * method_args.get('lambda_', 1.0)
-
-
 # ============================================================================
 # Algorithm Registry
 # ============================================================================
@@ -450,7 +413,6 @@ MERGE_ALGORITHMS = {
     "slerp": slerp_merge,
     "nuslerp": nuslerp_merge,
     "nearswap": nearswap_merge,
-    "arcee_fusion": arcee_fusion,
 }
 
 

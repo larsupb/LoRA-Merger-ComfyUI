@@ -229,12 +229,6 @@ Nearest neighbor parameter swapping.
 **Parameters:**
 - `distance_metric` ("cosine" or "euclidean"): Distance measure
 
-#### PM Arcee Fusion
-Arcee's proprietary fusion method for high-quality merges.
-
-**Parameters:**
-- Various advanced parameters (see node UI)
-
 ### Utility Nodes
 
 #### PM LoRA Modifier

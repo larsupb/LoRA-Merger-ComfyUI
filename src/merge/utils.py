@@ -188,7 +188,7 @@ def apply_weights_to_tensors(
     Apply strength weights to tensors.
 
     This is a common pattern across multiple merge algorithms (slerp, karcher,
-    nearswap, arcee_fusion). Extracted to eliminate code duplication.
+    nearswap). Extracted to eliminate code duplication.
 
     Args:
         tensors: Dictionary mapping LoRA names to their tensors

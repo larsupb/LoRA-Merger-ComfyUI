@@ -12,9 +12,9 @@ from .src.lora_stack_sampler import LoRAStackSampler
 from .src.nodes_lora_modifier import LoRAModifier
 from .src.nodes_merge_methods import TaskArithmeticMergeMethod, NearSwapMergeMethod, SCEMergeMethod, BreadcrumbsMergeMethod, \
     TIESMergeMethod, DAREMergeMethod, DELLAMergeMethod, SLERPMergeMethod, LinearMergeMethod, NuSlerpMergeMethod, \
-    ArceeFusionMergeMethod, KArcherMergeMethod
+    KArcherMergeMethod
 
-version_code = [2, 2, 3]
+version_code = [2, 2, 4]
 version_str = f"V{version_code[0]}.{version_code[1]}" + (f'.{version_code[2]}' if len(version_code) > 2 else '')
 print(f"### Loading: ComfyUI LoRA-PowerMerge ({version_str})")
 
@@ -33,7 +33,6 @@ NODE_CLASS_MAPPINGS = {
     "PM Slerp (Mergekit)": SLERPMergeMethod,
     "PM NuSlerp (Mergekit)": NuSlerpMergeMethod,
     "PM NearSwap (Mergekit)": NearSwapMergeMethod,
-    "PM Arcee Fusion (Mergekit)": ArceeFusionMergeMethod,
 
     "PM Linear (Mergekit)": LinearMergeMethod,
     "PM SCE (Mergekit)": SCEMergeMethod,
@@ -67,7 +66,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PM Slerp (Mergekit)": "PM Slerp (Mergekit)",
     "PM NuSlerp (Mergekit)": "PM NuSlerp (Mergekit)",
     "PM NearSwap (Mergekit)": "PM NearSwap (Mergekit)",
-    "PM Arcee Fusion (Mergekit)": "PM Arcee Fusion (Mergekit)",
 
     "PM Linear (Mergekit)": "PM Linear (Mergekit)",
     "PM SCE (Mergekit)": "PM SCE (Mergekit)",

@@ -82,7 +82,6 @@ class TestAlgorithmRegistry:
             "slerp",
             "nuslerp",
             "nearswap",
-            "arcee_fusion",
         ]
 
         for alg in expected_algorithms:
