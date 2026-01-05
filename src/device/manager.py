@@ -29,6 +29,7 @@ class DeviceManager:
     SUPPORTED_DTYPES = [
         "float16", "float32", "float64",
         "bfloat16",
+        "float8_e4m3fn", "float8_e5m2",  # FP8 formats
         "int8", "int16", "int32", "int64",
     ]
 

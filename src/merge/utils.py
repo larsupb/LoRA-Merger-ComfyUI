@@ -140,6 +140,14 @@ def apply_layer_filter(
         else:
             logging.debug(f"Processing LoRA ({total_keys} keys, architecture: {arch_name})")
 
+    # Remove clip layers in any case (they are handled separately)
+    patch_dict = {
+        k0: v0
+        for k0, v0 in patch_dict.items()
+        if not str(k0).lower().startswith("clip_l.")
+        and not str(k0).lower().startswith("clip_g.")
+    }
+
     if layer_filter:
         import re
 

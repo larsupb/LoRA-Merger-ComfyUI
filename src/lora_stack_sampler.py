@@ -146,7 +146,9 @@ class LoRAStackSampler:
         latents_out = []
 
         kSampler = SamplerCustom()
-        for lora_name, patch_dict in key_dicts.items():
+        for lora_name, lora_entry in key_dicts.items():
+            # Extract patches from the stack entry
+            patch_dict = lora_entry.get("patches", {})
             strengths = lora_strengths[lora_name]
             logging.info(f"PM LoRAStackSampler: Applying LoRA {lora_name} with weights {strengths}")
 

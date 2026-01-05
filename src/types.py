@@ -34,9 +34,22 @@ LORA_TENSORS_BY_LAYER = Dict[str, LORA_TENSOR_DICT]
 # The LoRAAdapter contains weights tuple: (up, down, alpha, mid, dora_scale, reshape)
 LORA_KEY_DICT = Dict[str, LoRAAdapter]
 
-# Stack of LoRAs: LoRA name -> layer dictionary
+
+class LoRAStackEntry(TypedDict, total=False):
+    """
+    Single entry in a LoRA stack.
+
+    Fields:
+        patches: The LoRA layer dictionary (layer key -> LoRAAdapter)
+        file_path: Absolute path to the LoRA file on disk
+    """
+    patches: LORA_KEY_DICT
+    file_path: str
+
+
+# Stack of LoRAs: LoRA name -> LoRA stack entry with patches and metadata
 # This is the primary data structure for managing multiple LoRAs
-LORA_STACK = Dict[str, LORA_KEY_DICT]
+LORA_STACK = Dict[str, LoRAStackEntry]
 
 # Raw LoRA state dicts: Maps LoRA name to original raw state dict
 # Used to preserve CLIP weights when saving merged LoRAs
@@ -271,10 +284,21 @@ def is_lora_tensors(obj: Any) -> bool:
 
 def is_lora_stack(obj: Any) -> bool:
     """Type guard for LORA_STACK."""
-    return (
-        isinstance(obj, dict) and
-        all(isinstance(k, str) and isinstance(v, dict) for k, v in obj.items())
-    )
+    if not isinstance(obj, dict):
+        return False
+
+    for k, v in obj.items():
+        if not isinstance(k, str):
+            return False
+        if not isinstance(v, dict):
+            return False
+        # Check for required 'patches' key
+        if 'patches' not in v:
+            return False
+        if not isinstance(v['patches'], dict):
+            return False
+
+    return True
 
 
 def validate_lora_tensors(tensors: LORA_TENSORS) -> None:
@@ -309,6 +333,13 @@ def validate_lora_stack(stack: LORA_STACK) -> None:
     if len(stack) == 0:
         raise ValueError("LORA_STACK cannot be empty")
 
+    # Validate each entry has required fields
+    for lora_name, entry in stack.items():
+        if 'patches' not in entry:
+            raise ValueError(f"LoRA '{lora_name}' missing 'patches' key")
+        if not isinstance(entry['patches'], dict):
+            raise ValueError(f"LoRA '{lora_name}' patches must be a dictionary")
+
 
 # ============================================================================
 # Exports
@@ -320,6 +351,7 @@ __all__ = [
     'LORA_TENSOR_DICT',
     'LORA_TENSORS_BY_LAYER',
     'LORA_KEY_DICT',
+    'LoRAStackEntry',
     'LORA_STACK',
     'LORA_RAW_DICT',
     'LORA_WEIGHTS',

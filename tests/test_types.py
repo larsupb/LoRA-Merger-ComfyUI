@@ -76,8 +76,8 @@ class TestLoRAStackTypeGuard:
         adapter2 = LoRAAdapter("lora", (torch.randn(10, 5), torch.randn(5, 10), 1.0, None, None, None))
 
         stack = {
-            "lora1": {"layer1": adapter1},
-            "lora2": {"layer2": adapter2},
+            "lora1": {"patches": {"layer1": adapter1}, "file_path": "/path/to/lora1.safetensors"},
+            "lora2": {"patches": {"layer2": adapter2}, "file_path": "/path/to/lora2.safetensors"},
         }
 
         assert is_lora_stack(stack)
@@ -94,6 +94,14 @@ class TestLoRAStackTypeGuard:
     def test_invalid_non_dict_values(self):
         """Test that dict with non-dict values is rejected."""
         assert not is_lora_stack({"lora1": "not a dict"})
+
+    def test_invalid_missing_patches_key(self):
+        """Test that entry without 'patches' key is rejected."""
+        assert not is_lora_stack({"lora1": {"file_path": "/path/to/lora1.safetensors"}})
+
+    def test_invalid_patches_not_dict(self):
+        """Test that entry with non-dict patches is rejected."""
+        assert not is_lora_stack({"lora1": {"patches": "not a dict", "file_path": "/path"}})
 
 
 class TestValidateLoRATensors:

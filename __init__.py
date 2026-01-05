@@ -13,6 +13,8 @@ from .src.nodes_lora_modifier import LoRAModifier
 from .src.nodes_merge_methods import TaskArithmeticMergeMethod, NearSwapMergeMethod, SCEMergeMethod, BreadcrumbsMergeMethod, \
     TIESMergeMethod, DAREMergeMethod, DELLAMergeMethod, SLERPMergeMethod, LinearMergeMethod, NuSlerpMergeMethod, \
     KArcherMergeMethod
+from .src.nodes_semantic_merge import PMSemanticMergeSpec, PMSemanticMerger
+from src.nodes_semantic_analysis import PMLoRASemanticAnalyzerHeuristic, PMLoRASemanticAnalyzerGradient
 
 version_code = [2, 2, 4]
 version_str = f"V{version_code[0]}.{version_code[1]}" + (f'.{version_code[2]}' if len(version_code) > 2 else '')
@@ -49,6 +51,12 @@ NODE_CLASS_MAPPINGS = {
     "PM LoRA Resizer": LoraResizer,
     "PM LoRA Apply": LoraApply,
     "PM LoRA Save": LoraSave,
+
+    # Semantic merge nodes
+    "PM LoRA Semantic Analyzer (Heuristic)": PMLoRASemanticAnalyzerHeuristic,
+    "PM LoRA Semantic Analyzer (Gradient)": PMLoRASemanticAnalyzerGradient,
+    "PM Semantic Merge Spec": PMSemanticMergeSpec,
+    "PM Semantic Merger": PMSemanticMerger,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -82,6 +90,16 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PM LoRA Resizer": "PM Resize LoRA",
     "PM LoRA Apply": "PM Apply LoRA",
     "PM LoRA Save": "PM Save LoRA",
+
+    # Loaders
+    "PM Checkpoint Loader (with Path)": "PM Checkpoint Loader (with Path)",
+    "PM Unet Loader (with Path)": "PM Unet Loader (with Path)",
+
+    # Semantic merge nodes
+    "PM LoRA Semantic Analyzer (Heuristic)": "PM LoRA Semantic Analyzer (Heuristic)",
+    "PM LoRA Semantic Analyzer (Gradient)": "PM LoRA Semantic Analyzer (Gradient)",
+    "PM Semantic Merge Spec": "PM Semantic Merge Spec",
+    "PM Semantic Merger": "PM Semantic Merger",
 }
 
 

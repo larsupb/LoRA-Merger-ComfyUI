@@ -1,7 +1,7 @@
 import logging
 import math
 import re
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Tuple, Any
 
 import comfy
 import torch
@@ -22,9 +22,10 @@ def weights_as_tuple(up: torch.Tensor, down: torch.Tensor, alpha: torch.Tensor):
 
 def analyse_keys(loras: LORA_STACK) -> Set[str]:
     keys = set()
-    for i, lora in enumerate(loras.values()):
+    for i, lora_entry in enumerate(loras.values()):
         key_count = 0
-        for key in lora.keys():
+        patches = lora_entry["patches"]
+        for key in patches.keys():
             keys.add(key)
             key_count += 1
         logging.debug(f"LoRA {i} with {key_count} modules.")
@@ -51,7 +52,7 @@ def calc_up_down_alphas(
        Returns:
            List of tuples containing up, down tensors and alpha values.
     """
-    owners = [lora_name for lora_name, lora_key_dict in loras_lora_key_dict.items() if key in lora_key_dict]
+    owners = [lora_name for lora_name, lora_entry in loras_lora_key_dict.items() if key in lora_entry["patches"]]
     if len(owners) == 0:
         raise ValueError(f"Key {key} not found in any LoRA provided.")
 
@@ -63,13 +64,13 @@ def calc_up_down_alphas(
     down_idx, up_idx, alpha_idx = (1, 0, 2)
 
     # Determine alpha from the first lora which contains the module
-    owner_0_key_dict = loras_lora_key_dict[owners[0]]
-    alpha_0 = owner_0_key_dict[key].weights[alpha_idx]
+    owner_0_patches = loras_lora_key_dict[owners[0]]["patches"]
+    alpha_0 = owner_0_patches[key].weights[alpha_idx]
 
     out = {}
     for lora_name in owners:
-        lora_key_dict = loras_lora_key_dict[lora_name]
-        lora_tensors = lora_key_dict[key].weights
+        patches = loras_lora_key_dict[lora_name]["patches"]
+        lora_tensors = patches[key].weights
         up = lora_tensors[up_idx]
         down = lora_tensors[down_idx]
         alpha = lora_tensors[alpha_idx]
@@ -99,160 +100,215 @@ def scale_alphas(ups_downs_alphas):
     return out, alpha_1
 
 
-def sd_to_diffusers_map(model: ModelPatcher) -> Dict[str, str]:
-    diffusers_keys = comfy.utils.unet_to_diffusers(model.model.model_config.unet_config)
+def build_lora_to_unet_key_map(model: ModelPatcher) -> Dict[str, str]:
+    """
+    Build a forward mapping from LoRA parameter keys to Diffusers UNet weight paths.
 
-    key_map = {}
-    for k in diffusers_keys:
-        if k.endswith(".weight"):
-            unet_key = "diffusion_model.{}".format(diffusers_keys[k])
-            key_lora = k[:-len(".weight")].replace(".", "_")
-            key_map["lora_unet_{}".format(key_lora)] = unet_key
-            key_map["lycoris_{}".format(key_lora)] = unet_key  # simpletuner lycoris format
+    The mapping includes multiple LoRA naming conventions:
+    - Standard LoRA safetensors keys:      lora_unet_*
+    - LyCORIS / SimpleTuner keys:          lycoris_*
+    - Diffusers-native LoRA processor keys (with and without 'unet.' prefix)
 
-            diffusers_lora_prefix = ["", "unet."]
-            for p in diffusers_lora_prefix:
-                diffusers_lora_key = "{}{}".format(p, k[:-len(".weight")].replace(".to_", ".processor.to_"))
-                if diffusers_lora_key.endswith(".to_out.0"):
-                    diffusers_lora_key = diffusers_lora_key[:-2]
-                key_map[diffusers_lora_key] = unet_key
+    Parameters
+    ----------
+    model : ModelPatcher
+        A ComfyUI ModelPatcher containing a Diffusers-compatible UNet.
 
-    # Create inverse entries for key_map
-    inverse_map = {v: k for k, v in key_map.items()}
+    Returns
+    -------
+    Dict[str, str]
+        Mapping from LoRA key name to Diffusers UNet weight path
+        (e.g. 'diffusion_model.input_blocks.0.0.transformer_blocks.0.attn1.to_q').
+    """
+    diffusers_keys = comfy.utils.unet_to_diffusers(
+        model.model.model_config.unet_config
+    )
+
+    forward_map: Dict[str, str] = {}
+
+    for diffusers_key, sd_key in diffusers_keys.items():
+        if not diffusers_key.endswith(".weight"):
+            continue
+
+        unet_weight = f"diffusion_model.{sd_key}"
+        base_key = diffusers_key[:-len(".weight")]
+
+        # --- ComfyUI / Kohya LoRA format ---
+        lora_key = base_key.replace(".", "_")
+        forward_map[f"lora_unet_{lora_key}"] = unet_weight
+        forward_map[f"lycoris_{lora_key}"] = unet_weight  # SimpleTuner / LyCORIS
+
+        # --- Diffusers native LoRA processor format ---
+        for prefix in ("", "unet."):
+            diffusers_lora_key = (
+                prefix + base_key.replace(".to_", ".processor.to_")
+            )
+
+            # diffusers special case: ".to_out.0" → ".to_out"
+            if diffusers_lora_key.endswith(".to_out.0"):
+                diffusers_lora_key = diffusers_lora_key[:-2]
+
+            forward_map[diffusers_lora_key] = unet_weight
+
+    return forward_map
+
+
+def invert_lora_to_unet_key_map(
+    forward_map: Dict[str, str]
+) -> Dict[str, Set[str]]:
+    """
+    Invert a LoRA→UNet mapping into a UNet→LoRA alias mapping.
+
+    Multiple LoRA key names may legally map to the same UNet weight,
+    so the inverse map stores a set of aliases per UNet parameter.
+
+    Parameters
+    ----------
+    forward_map : Dict[str, str]
+        Mapping from LoRA key name to UNet weight path.
+
+    Returns
+    -------
+    Dict[str, Set[str]]
+        Mapping from UNet weight path to a set of LoRA key aliases.
+    """
+    inverse_map: Dict[str, Set[str]] = {}
+
+    for lora_key, unet_key in forward_map.items():
+        inverse_map.setdefault(unet_key, set()).add(lora_key)
+
     return inverse_map
 
 
-def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
-    diffusers_map = sd_to_diffusers_map(model)
-    out = {}
+def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT) -> Dict[str, Tensor]:
+    """
+    Convert a ComfyUI LoRA state_dict into a regular Kohya/Diffusers-compatible
+    LoRA safetensors dictionary.
 
-    # Group split QKV weights by base key
-    qkv_groups = {}
-    non_qkv_keys = []
+    Supports:
+    - SD / SDXL UNet
+    - DiT-style architectures
+    - Flux / transformer-based models
+    - Split QKV LoRA tensors
+    - LyCORIS and DoRA metadata (safely ignored but validated)
+
+    Returns
+    -------
+    Dict[str, Tensor]
+        Flat LoRA state dict with:
+        - *.lora_up.weight
+        - *.lora_down.weight
+        - *.alpha
+    """
+
+    # --- Build mappings ---
+    forward_map = build_lora_to_unet_key_map(model)
+    inverse_map = invert_lora_to_unet_key_map(forward_map)
+
+    out: Dict[str, Tensor] = {}
+
+    # --- Helpers -------------------------------------------------------------
+
+    def normalize_sd_key(sd_key) -> str:
+        key = sd_key[0] if isinstance(sd_key, tuple) else sd_key
+        if key.endswith(".weight"):
+            key = key[:-7]
+        return key
+
+    def alpha_to_tensor(alpha) -> Tensor:
+        if alpha is None:
+            return torch.tensor(1.0)
+        if isinstance(alpha, torch.Tensor):
+            return alpha.clone().detach().cpu()
+        return torch.tensor(float(alpha))
+
+    # --- Split QKV grouping --------------------------------------------------
+
+    qkv_groups: Dict[str, List[Tuple]] = {}
+    regular_keys: List[Any] = []
 
     for sd_key in state_dict.keys():
-        # Check if this is a split QKV key (tuple format with offset)
         if isinstance(sd_key, tuple) and len(sd_key) == 2:
-            base_key = sd_key[0]
-            if ".qkv.weight" in base_key or ".in_proj_weight" in base_key:
-                if base_key not in qkv_groups:
-                    qkv_groups[base_key] = []
-                qkv_groups[base_key].append(sd_key)
-            else:
-                non_qkv_keys.append(sd_key)
-        else:
-            non_qkv_keys.append(sd_key)
+            base = sd_key[0]
+            if ".qkv.weight" in base or ".in_proj_weight" in base:
+                qkv_groups.setdefault(base, []).append(sd_key)
+                continue
+        regular_keys.append(sd_key)
 
-    # Process QKV groups - concatenate split components
+    # --- Process QKV LoRA ----------------------------------------------------
+
     for base_key, split_keys in qkv_groups.items():
-        # Sort by offset to ensure correct order (Q, K, V)
-        split_keys_sorted = sorted(split_keys, key=lambda x: x[1][1])  # Sort by offset
+        # Sort by offset (Q, K, V)
+        split_keys = sorted(split_keys, key=lambda x: x[1][1])
 
-        # Extract tensors from each split
-        up_parts = []
-        down_parts = []
-        alphas = []
+        up_parts, down_parts, alphas = [], [], []
+        mids, dora_scales, reshapes = [], [], []
 
-        for sk in split_keys_sorted:
+        for sk in split_keys:
             lora_settings = state_dict[sk]
             up, down, alpha, mid, dora_scale, reshape = lora_settings.weights
+
             up_parts.append(up)
             down_parts.append(down)
             alphas.append(alpha if alpha is not None else 1.0)
+            mids.append(mid)
+            dora_scales.append(dora_scale)
+            reshapes.append(reshape)
 
-        # Check if all alphas are the same
-        alpha_val = alphas[0]
-        if not all(abs(a - alpha_val) < 1e-6 for a in alphas):
-            logging.warning(f"QKV components have different alphas: {alphas}. Using first alpha: {alpha_val}")
+        # Safety checks
+        if not all(torch.equal(down_parts[0], d) for d in down_parts[1:]):
+            raise ValueError(f"Inconsistent down tensors in QKV group: {base_key}")
 
-        # Concatenate along the output dimension (dim=0 for up tensor)
+        if not all(a == alphas[0] for a in alphas):
+            logging.warning(
+                f"QKV alpha mismatch {alphas} in {base_key}; using first."
+            )
+
+        # Combine
         up_combined = torch.cat(up_parts, dim=0)
-        # down tensors should be the same for all splits, just take the first one
         down_combined = down_parts[0]
+        alpha_tensor = alpha_to_tensor(alphas[0])
 
-        # Generate key for combined QKV
-        key_base = base_key.replace("diffusion_model.", "")
-        if key_base.endswith(".weight"):
-            key_base = key_base[:-len(".weight")]
-        key_suffix = key_base.replace(".", "_")
+        # Key resolution
+        norm_key = normalize_sd_key(base_key)
 
-        up_key = "lora_unet_{}.lora_up.weight".format(key_suffix)
-        down_key = "lora_unet_{}.lora_down.weight".format(key_suffix)
-        alpha_key = "lora_unet_{}.alpha".format(key_suffix)
-
-        # Convert alpha to tensor, handling both float and tensor inputs
-        if alpha_val is None:
-            alpha_tensor = torch.tensor(1.0)
-        elif isinstance(alpha_val, torch.Tensor):
-            alpha_tensor = alpha_val.clone().detach().cpu()
+        if norm_key in inverse_map:
+            # SD / SDXL UNet path
+            lora_base = norm_key
         else:
-            alpha_tensor = torch.tensor(float(alpha_val))
+            # DiT / Flux fallback
+            lora_base = f"lora_unet_{norm_key.replace('.', '_')}"
 
-        out[up_key] = up_combined
-        out[down_key] = down_combined
-        out[alpha_key] = alpha_tensor
+        out[f"{lora_base}.lora_up.weight"] = up_combined
+        out[f"{lora_base}.lora_down.weight"] = down_combined
+        out[f"{lora_base}.alpha"] = alpha_tensor
 
-    # Process non-QKV keys normally
-    for sd_key in non_qkv_keys:
+    # --- Process regular (non-QKV) LoRA -------------------------------------
+
+    for sd_key in regular_keys:
         lora_settings = state_dict[sd_key]
-        lora_type: str = lora_settings.name
-        lora_data: List[Tensor] = lora_settings.weights
-        if lora_type == "lora":
-            # ComfyUI uses tuple keys - convert to string if needed
-            key_str = sd_key[0] if isinstance(sd_key, tuple) else sd_key
 
-            # Check if this is a DiT architecture key (doesn't need conversion)
-            # DiT keys look like: diffusion_model.layers.X.feed_forward.w1.weight
-            if sd_key not in diffusers_map:
-                # For DiT architecture, keys are already in correct format
-                # Just convert to standard LoRA format with .lora_up/.lora_down suffix
-                up, down, alpha, mid, dora_scale, reshape = lora_data
+        if lora_settings.name != "lora":
+            raise ValueError(
+                f"Unsupported LoRA type: {lora_settings.name}"
+            )
 
-                # Strip .weight suffix if present before converting to LoRA format
-                # ComfyUI internal keys end with .weight, but LoRA keys should not have it in the middle
-                key_base = key_str.replace("diffusion_model.", "")
-                if key_base.endswith(".weight"):
-                    key_base = key_base[:-len(".weight")]
+        up, down, alpha, mid, dora_scale, reshape = lora_settings.weights
+        alpha_tensor = alpha_to_tensor(alpha)
 
-                # Convert dots to underscores for LoRA naming convention
-                key_suffix = key_base.replace(".", "_")
-                up_key = "lora_unet_{}.lora_up.weight".format(key_suffix)
-                down_key = "lora_unet_{}.lora_down.weight".format(key_suffix)
-                alpha_key = "lora_unet_{}.alpha".format(key_suffix)
+        norm_key = normalize_sd_key(sd_key)
 
-                # Convert alpha to tensor, handling both float and tensor inputs
-                if alpha is None:
-                    alpha_tensor = torch.tensor(1.0)
-                elif isinstance(alpha, torch.Tensor):
-                    alpha_tensor = alpha.clone().detach().cpu()
-                else:
-                    alpha_tensor = torch.tensor(float(alpha))
-
-                out[up_key] = up
-                out[down_key] = down
-                out[alpha_key] = alpha_tensor
-            else:
-                # Standard SD UNet architecture - use mapping
-                out_key = diffusers_map[sd_key]
-
-                up, down, alpha, mid, dora_scale, reshape = lora_data
-                up_key = "{}.lora_up.weight".format(out_key)
-                down_key = "{}.lora_down.weight".format(out_key)
-                alpha_key = "{}.alpha".format(out_key)
-
-                # Convert alpha to tensor, handling both float and tensor inputs
-                if alpha is None:
-                    alpha_tensor = torch.tensor(1.0)
-                elif isinstance(alpha, torch.Tensor):
-                    alpha_tensor = alpha.clone().detach().cpu()
-                else:
-                    alpha_tensor = torch.tensor(float(alpha))
-
-                out[up_key] = up
-                out[down_key] = down
-                out[alpha_key] = alpha_tensor
+        if norm_key in inverse_map:
+            # SD / SDXL UNet
+            lora_base = norm_key
         else:
-            raise ValueError(f"Currently only LoRA type: {lora_type} is supported.")
+            # DiT / Flux / transformer blocks
+            lora_base = f"lora_unet_{norm_key.replace('.', '_')}"
+
+        out[f"{lora_base}.lora_up.weight"] = up
+        out[f"{lora_base}.lora_down.weight"] = down
+        out[f"{lora_base}.alpha"] = alpha_tensor
+
     return out
 
 

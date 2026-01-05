@@ -83,7 +83,10 @@ Outputs:
                     lora_raw = comfy.utils.load_torch_file(lora_path, safe_load=True)
                     patch_dict = comfy.lora.load_lora(lora_raw, key_map)
                     patch_dict = apply_layer_filter(patch_dict, layer_filter)
-                    lora_patch_dicts[lora_name] = patch_dict
+                    lora_patch_dicts[lora_name] = {
+                        'patches': patch_dict,
+                        'file_path': lora_path,
+                    }
                     lora_strengths[lora_name] = {
                         'strength_model': strength_model,
                         'strength_clip': strength_clip,

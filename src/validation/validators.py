@@ -62,8 +62,9 @@ class LoRAStackValidator:
             })
 
         # Check each LoRA has layers
-        for lora_name, lora_dict in lora_stack.items():
-            if not lora_dict:
+        for lora_name, lora_entry in lora_stack.items():
+            patches = lora_entry.get("patches", {})
+            if not patches:
                 errors.append({
                     "code": "EMPTY_LORA",
                     "message": f"LoRA '{lora_name}' has no layers",
@@ -71,7 +72,7 @@ class LoRAStackValidator:
                 })
 
         # Check for common keys across LoRAs
-        all_keys = [set(lora_dict.keys()) for lora_dict in lora_stack.values()]
+        all_keys = [set(lora_entry["patches"].keys()) for lora_entry in lora_stack.values()]
         common_keys = set.intersection(*all_keys) if all_keys else set()
 
         if not common_keys:

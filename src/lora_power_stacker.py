@@ -214,8 +214,11 @@ Use the widget to add/remove LoRAs dynamically."""
                     # Apply layer filter (applies to both UNet and CLIP layers)
                     patch_dict = apply_layer_filter(patch_dict, layer_filter)
 
-                    # Store in outputs
-                    lora_patch_dicts[lora_name_pretty] = patch_dict
+                    # Store in outputs with file path metadata
+                    lora_patch_dicts[lora_name_pretty] = {
+                        'patches': patch_dict,
+                        'file_path': lora_path,
+                    }
                     lora_strengths[lora_name_pretty] = {
                         'strength_model': strength,
                         'strength_clip': strength,

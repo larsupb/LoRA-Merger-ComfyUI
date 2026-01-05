@@ -29,8 +29,12 @@ class LoRASelect:
             raise IndexError(f"Index {index} out of range for LoRAStack with {len(keys)} items.")
         selected_key = keys[index]
 
+        # Extract patches from the stack entry
+        lora_entry = key_dicts[selected_key]
+        patches = lora_entry.get("patches", {})
+
         bundle = {
-            "lora": key_dicts[selected_key],
+            "lora": patches,
             "strength_model": 1.0,
             "name": selected_key
         }

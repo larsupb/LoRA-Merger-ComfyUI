@@ -37,9 +37,15 @@ class LoRAModifier:
         print("Block scale dict:", block_scale_dict)
 
         new_key_dicts = {}
-        for lora_name, patch_dict in key_dicts.items():
+        for lora_name, lora_entry in key_dicts.items():
+            # Extract patches from the stack entry
+            patch_dict = lora_entry.get("patches", {})
             patch_dict_modified = self.apply(patch_dict, block_scale_dict, architecture=arch)
-            new_key_dicts[lora_name] = patch_dict_modified
+            # Create new entry with modified patches, preserving file_path
+            new_key_dicts[lora_name] = {
+                "patches": patch_dict_modified,
+                "file_path": lora_entry.get("file_path", "")
+            }
 
         return (new_key_dicts,)
 

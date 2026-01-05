@@ -1,2 +1,4 @@
 git+https://github.com/arcee-ai/mergekit.git#egg=mergekit
 lxml
+diffusers>=0.30.0
+accelerate>=0.20.0
