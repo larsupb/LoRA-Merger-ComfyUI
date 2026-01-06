@@ -100,7 +100,7 @@ class PMLoRASemanticAnalyzerHeuristic:
 
             semantic_map = None
             if use_cache:
-                cached_map = cache.get(lora_name, lora_patches, config)
+                cached_map = cache.get(lora_name, config)
                 if cached_map is not None:
                     semantic_map = cached_map
                     analysis_results.append(f"{lora_name}: loaded from cache")
@@ -471,8 +471,6 @@ class PMLoRASemanticAnalyzerGradient:
         device: str = "auto",
         dtype: str = "auto",
         num_samples: int = 3,
-        offload_layers: bool = False,
-        gpu_memory_gb: float = 0.0,
     ) -> Tuple[Dict[str, Any], str]:
         """
         Analyze LoRA stack using gradient-based attribution.
@@ -573,19 +571,12 @@ class PMLoRASemanticAnalyzerGradient:
                 arch_name = architecture_hint
 
                 logger.info(f"Running gradient analysis for {lora_file_path} ({arch_name})...")
-
-                # Run gradient-based analysis with checkpoint_path
-                # Convert gpu_memory_gb to None if 0.0 (auto-detect)
-                gpu_mem = None if gpu_memory_gb == 0.0 else gpu_memory_gb
-
                 semantic_map = analyzer.analyze_lora(
                     lora_path=lora_file_path,
                     features=feature_list,
                     architecture=arch_name,
                     checkpoint_path=checkpoint_path,
                     num_samples=num_samples,
-                    offload_layers=offload_layers,
-                    gpu_memory_gb=gpu_mem,
                 )
 
                 # Cache results

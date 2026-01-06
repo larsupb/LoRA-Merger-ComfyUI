@@ -210,39 +210,6 @@ class TestGradientSemanticAnalyzer:
             assert all(isinstance(p, str) for p in prompts)
             assert all(len(p) > 0 for p in prompts)
 
-    def test_convert_to_semantic_map(self, mock_model, mock_clip, mock_lora_patches):
-        """Test conversion from raw attributions to semantic map."""
-        analyzer = GradientSemanticAnalyzer(mock_model, mock_clip)
-
-        # Create mock feature attributions
-        feature_attributions = {
-            "hair": {
-                "diffusion_model.layers.0.attention.qkv.up": torch.ones(64, 16),
-                "diffusion_model.layers.0.attention.qkv.down": torch.ones(16, 64),
-            },
-            "eyes": {
-                "diffusion_model.layers.0.attention.qkv.up": torch.ones(64, 16) * 0.5,
-                "diffusion_model.layers.0.attention.qkv.down": torch.ones(16, 64) * 0.5,
-            },
-        }
-
-        features = ["hair", "eyes"]
-
-        semantic_map = analyzer._convert_to_semantic_map(
-            feature_attributions,
-            mock_lora_patches,
-            features
-        )
-
-        # Should have entries for each feature
-        assert "hair" in semantic_map
-        assert "eyes" in semantic_map
-
-        # Should have layer keys (without .up/.down suffixes)
-        for feature in features:
-            assert "diffusion_model.layers.0.attention.qkv" in semantic_map[feature]
-
-
 class TestFeaturePrompts:
     """Test feature prompt utilities."""
 

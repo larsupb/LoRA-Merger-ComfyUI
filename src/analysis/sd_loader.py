@@ -19,15 +19,13 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
-def load_sd15_for_gradients(
+def load_sd_for_gradients(
     checkpoint_path: str,
     device: torch.device,
     dtype: torch.dtype,
-    offload_layers: bool = False,
-    gpu_memory_gb: Optional[float] = None,
 ) -> StableDiffusionPipeline:
     """
-    Load SD1.5 UNet from checkpoint using diffusers' from_single_file().
+    Load SD1.5 / SDXL UNet from checkpoint using diffusers' from_single_file().
 
     Same approach as SDXL but using StableDiffusionPipeline instead.
 
@@ -35,8 +33,6 @@ def load_sd15_for_gradients(
         checkpoint_path: Path to .safetensors checkpoint file
         device: cuda/cpu (used if offload_layers=False)
         dtype: torch.float32, torch.float16, torch.bfloat16
-        offload_layers: If True, enable automatic CPU offloading
-        gpu_memory_gb: Ignored (kept for API compatibility)
 
     Returns:
         SD1.5 UNet ready for gradient computation
@@ -76,18 +72,11 @@ def load_sd15_for_gradients(
             feature_extractor=None,
             # Allow downloading tiny config files but not model weights
         )
-
         logger.info("✓ Pipeline loaded successfully")
 
         # Setup device placement
-        if offload_layers:
-            logger.info("Setting up automatic CPU offloading...")
-            pipe.enable_model_cpu_offload()
-            logger.info("✓ CPU offloading enabled")
-        else:
-            logger.info(f"Moving pipeline to {device}...")
-            pipe.to(device)
-            logger.info(f"✓ Pipeline on {device}")
+        pipe.to(device)
+        logger.info(f"✓ Pipeline on {device}")
 
         # Extract UNet
         unet = pipe.unet
@@ -99,7 +88,6 @@ def load_sd15_for_gradients(
 
         logger.info("✓ SD1.5 UNet loaded successfully")
         logger.info(f"  Device: {device}, dtype: {dtype}")
-        logger.info(f"  CPU offloading: {'enabled' if offload_layers else 'disabled'}")
         logger.info(f"  Parameters: {sum(p.numel() for p in unet.parameters()):,}")
         logger.info(f"  Gradient enabled: {next(unet.parameters()).requires_grad}")
 

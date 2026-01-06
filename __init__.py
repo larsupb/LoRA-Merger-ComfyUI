@@ -14,7 +14,7 @@ from .src.nodes_merge_methods import TaskArithmeticMergeMethod, NearSwapMergeMet
     TIESMergeMethod, DAREMergeMethod, DELLAMergeMethod, SLERPMergeMethod, LinearMergeMethod, NuSlerpMergeMethod, \
     KArcherMergeMethod
 from .src.nodes_semantic_merge import PMSemanticMergeSpec, PMSemanticMerger
-from src.nodes_semantic_analysis import PMLoRASemanticAnalyzerHeuristic, PMLoRASemanticAnalyzerGradient
+from .src.nodes_semantic_analysis import PMLoRASemanticAnalyzerHeuristic, PMLoRASemanticAnalyzerGradient
 
 version_code = [2, 2, 4]
 version_str = f"V{version_code[0]}.{version_code[1]}" + (f'.{version_code[2]}' if len(version_code) > 2 else '')
