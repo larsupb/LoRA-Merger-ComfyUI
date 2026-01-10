@@ -83,7 +83,7 @@ CONFIG = {
     "checkpoint_name": "checkpoints/SD1.5/analogMadness_v70.safetensors",
     "features": "hair,earrings,face,breasts",
     "architecture_hint": "sd15",
-    "num_samples": 1,  # From workflow
+    "num_samples": 20,  # From workflow
     "use_cache": False,  # From workflow
     "device": "auto",
     "dtype": "float16",

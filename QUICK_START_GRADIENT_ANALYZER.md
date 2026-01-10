@@ -99,18 +99,16 @@ When you click `checkpoint_name`, you'll see all your models:
 ### Use MODEL Auto-Extract When:
 - Complex workflow
 - Need MODEL for other nodes (Apply LoRA, etc.)
-- Want guaranteed checkpoint/MODEL match
 
 **Setup:**
 ```
-[PM Checkpoint Loader (with Path)]
-   ├─ model ─────────────────┐
-   └─ clip ──────────────┐   │
-                         │   │
+[CheckpointLoaderSimple]
+   ├─ model ───→ (to other nodes)
+   └─ clip ──────────────┐
+                         │
 [PM LoRA Semantic Analyzer (Gradient)]
-   ├─ checkpoint_name: (leave empty!)
-   ├─ model: ←──────────────│
-   └─ clip: ←───────────────┘
+   ├─ checkpoint_name: select from dropdown
+   └─ clip: ←───────────┘
 ```
 
 ## Common Settings
@@ -158,11 +156,10 @@ dtype:  "float16"  ← Faster, uses less VRAM
 
 ### ❌ Error: "checkpoint_path is required"
 
-**Cause:** Neither dropdown nor MODEL provided a path
+**Cause:** No checkpoint selected in dropdown
 
 **Fix:**
-1. Select a checkpoint from `checkpoint_name` dropdown, OR
-2. Use `PM Checkpoint Loader (with Path)` and connect MODEL
+1. Select a checkpoint from the `checkpoint_name` dropdown
 
 ### ❌ Dropdown is empty
 

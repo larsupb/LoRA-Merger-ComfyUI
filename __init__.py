@@ -91,10 +91,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "PM LoRA Apply": "PM Apply LoRA",
     "PM LoRA Save": "PM Save LoRA",
 
-    # Loaders
-    "PM Checkpoint Loader (with Path)": "PM Checkpoint Loader (with Path)",
-    "PM Unet Loader (with Path)": "PM Unet Loader (with Path)",
-
     # Semantic merge nodes
     "PM LoRA Semantic Analyzer (Heuristic)": "PM LoRA Semantic Analyzer (Heuristic)",
     "PM LoRA Semantic Analyzer (Gradient)": "PM LoRA Semantic Analyzer (Gradient)",

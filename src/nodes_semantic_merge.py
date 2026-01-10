@@ -10,8 +10,8 @@ import folder_paths
 import torch
 from comfy.weight_adapter import LoRAAdapter
 
-from .analysis.merge_statistics import MergeStatistics
-from .analysis.semantic_merger import MergeSpec, SemanticMerger
+from .semantic.merge_statistics import MergeStatistics
+from .semantic.semantic_merger import MergeSpec, SemanticMerger
 
 logger = logging.getLogger(__name__)
 

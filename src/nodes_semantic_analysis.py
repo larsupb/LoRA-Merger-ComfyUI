@@ -3,7 +3,7 @@ from typing import Tuple, Dict, Any, List
 import torch
 import folder_paths
 
-from src.analysis import get_cache, GradientSemanticAnalyzer
+from src.semantic import get_cache, GradientSemanticAnalyzer
 from src.nodes_semantic_merge import logger
 from src.types import LORA_STACK
 from src.utils import detect_lora_architecture
