@@ -12,6 +12,8 @@ from typing import Dict, List, Optional, Any
 from collections import defaultdict
 from enum import Enum
 
+from src.analysis.key_utils import NormalizedKey
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,13 +39,15 @@ class LayerContribution:
     """Single layer contribution from one LoRA for one feature."""
     lora_name: str
     feature: str
-    importance: float  # Raw importance from semantic map
-    feature_weight: float  # User-specified feature weight
-    effective_weight: float  # After normalization (actual blend weight)
-    normalized_share: float  # Share within this layer (computed in finalize)
+    importance: float
+    feature_weight: float
+    effective_weight: float
+    normalized_share: float
     layer_type: LayerType
     depth_bucket: DepthBucket
     relative_depth: float
+    was_matched: bool = True
+    is_exclusive: bool = False  # NEW
 
 
 def record_contribution(
@@ -119,6 +123,24 @@ class MergeStatistics:
     contested_layers: List[str] = field(default_factory=list)  # Layers with no clear winner
     coverage: Dict[str, Dict[str, int]] = field(default_factory=dict)  # {lora: {feature: count}}
 
+    # Track importance values
+    importance_histogram: Dict[str, list] = field(default_factory=lambda: defaultdict(list))
+    match_count: int = 0
+    fallback_count: int = 0
+
+    # Track unmatched keys for debugging
+    unmatched_samples: Dict[str, list] = field(default_factory=lambda: defaultdict(list))
+
+    # NEW: Track exclusive features
+    exclusive_features: Dict[str, str] = field(default_factory=dict)  # {feature: lora}
+    feature_weights: Dict[str, float] = field(default_factory=dict)  # {feature: weight}
+
+    def record_unmatched(self, norm_key: 'NormalizedKey', lora_name: str, feature: str):
+        """Record a sample of unmatched keys for debugging."""
+        key = f"{lora_name}_{feature}"
+        if len(self.unmatched_samples[key]) < 5:  # Keep only 5 samples per combination
+            self.unmatched_samples[key].append(str(norm_key))
+
     def record_contribution(
             self,
             layer_key: str,
@@ -126,13 +148,13 @@ class MergeStatistics:
             feature: str,
             importance: float,
             feature_weight: float,
-            effective_weight: float,  # ← Added parameter
+            effective_weight: float,
             layer_type: LayerType,
             relative_depth: float,
+            was_matched: bool = True,
+            is_exclusive: bool = False,  # NEW
     ) -> None:
-        """
-        Record a single contribution during merge.
-        """
+        """Record a single contribution during merge."""
         if relative_depth < 0.33:
             depth_bucket = DepthBucket.EARLY
         elif relative_depth < 0.66:
@@ -145,20 +167,39 @@ class MergeStatistics:
             feature=feature,
             importance=importance,
             feature_weight=feature_weight,
-            effective_weight=effective_weight,  # ← Use passed value
+            effective_weight=effective_weight,
             normalized_share=0.0,
             layer_type=layer_type,
             depth_bucket=depth_bucket,
             relative_depth=relative_depth,
+            was_matched=was_matched,
+            is_exclusive=is_exclusive,
         )
 
         layer_key_str = str(layer_key)
         self.layer_contributions[layer_key_str].append(contribution)
 
+        # Track metadata
         if lora_name not in self.source_loras:
             self.source_loras.append(lora_name)
         if feature not in self.features:
             self.features.append(feature)
+
+        # Track feature weights
+        self.feature_weights[feature] = feature_weight
+
+        # Track exclusive features
+        if is_exclusive and effective_weight > 0:
+            self.exclusive_features[feature] = lora_name
+
+        # Track matching
+        if was_matched:
+            self.match_count += 1
+        else:
+            self.fallback_count += 1
+
+        # Track importance distribution
+        self.importance_histogram[f"{lora_name}_{feature}"].append(importance)
 
     def finalize(self) -> None:
         """
@@ -393,6 +434,48 @@ class MergeStatistics:
             "",
         ]
 
+        # === FEATURE CONFIGURATION ===
+        lines.append("-" * 70)
+        lines.append("FEATURE CONFIGURATION")
+        lines.append("-" * 70)
+
+        for feature in self.features:
+            weight = self.feature_weights.get(feature, 1.0)
+            exclusive_lora = self.exclusive_features.get(feature)
+
+            if exclusive_lora:
+                lines.append(f"  {feature}: weight={weight:.2f} [EXCLUSIVE → {exclusive_lora}]")
+            else:
+                lines.append(f"  {feature}: weight={weight:.2f}")
+
+        lines.append("")
+
+        # === SEMANTIC MAP MATCHING ===
+        lines.append("-" * 70)
+        lines.append("SEMANTIC MAP MATCHING")
+        lines.append("-" * 70)
+
+        total_contributions = self.match_count + self.fallback_count
+        if total_contributions > 0:
+            match_pct = self.match_count / total_contributions * 100
+            lines.append(f"  Matched from semantic maps: {self.match_count} ({match_pct:.1f}%)")
+            lines.append(f"  Fallback to default (1.0): {self.fallback_count} ({100 - match_pct:.1f}%)")
+
+        lines.append("")
+        lines.append("  Importance value distribution:")
+        for key, values in sorted(self.importance_histogram.items()):
+            if values:
+                # Filter out zero values (from exclusive mode)
+                non_zero = [v for v in values if v > 0]
+                if non_zero:
+                    min_v, max_v = min(non_zero), max(non_zero)
+                    avg_v = sum(non_zero) / len(non_zero)
+                    lines.append(f"    {key}: min={min_v:.3f}, max={max_v:.3f}, avg={avg_v:.3f}")
+                else:
+                    lines.append(f"    {key}: excluded (exclusive mode)")
+
+        lines.append("")
+
         # === BY FEATURE ===
         lines.append("-" * 70)
         lines.append("BY FEATURE (which LoRA dominates each feature)")
@@ -401,14 +484,20 @@ class MergeStatistics:
         for feature in self.features:
             if feature not in self.by_feature:
                 continue
+
             contribs = self.by_feature[feature]
             sorted_contribs = sorted(contribs.items(), key=lambda x: -x[1])
 
             # Visual bar
             bar = self._make_bar(sorted_contribs)
-            contrib_str = ", ".join(f"{lora}: {pct*100:.1f}%" for lora, pct in sorted_contribs)
+            contrib_str = ", ".join(f"{lora}: {pct * 100:.1f}%" for lora, pct in sorted_contribs)
 
-            lines.append(f"  {feature}:")
+            # Add weight and exclusive indicator
+            weight = self.feature_weights.get(feature, 1.0)
+            excl = " [EXCLUSIVE]" if feature in self.exclusive_features else ""
+            weight_str = f" (weight={weight:.1f})" if weight != 1.0 else ""
+
+            lines.append(f"  {feature}{weight_str}{excl}:")
             lines.append(f"    {bar}")
             lines.append(f"    {contrib_str}")
 
@@ -524,7 +613,6 @@ class MergeStatistics:
                 shares_str = ", ".join(f"{l}: {s*100:.1f}%" for l, s in sorted(shares.items(), key=lambda x: -x[1]))
                 lines.append(f"  {layer_key}")
                 lines.append(f"    {shares_str}")
-
         return "\n".join(lines)
 
     def _make_bar(self, sorted_contribs: List[tuple], width: int = 40) -> str:

@@ -205,8 +205,6 @@ def main():
             device=CONFIG["device"],
             dtype=CONFIG["dtype"],
             num_samples=CONFIG["num_samples"],
-            offload_layers=CONFIG["offload_layers"],
-            gpu_memory_gb=CONFIG["gpu_memory_gb"],
         )
         analysis_time = time.time() - analysis_start
 
@@ -229,7 +227,8 @@ def main():
         test_step(current_step, total_steps, "Semantic LoRA Merging")
 
         merger = PMSemanticMerger()
-        (merged_lora,) = merger.merge_semantic(
+        merged_lora, merge_report, stats = merger.merge_semantic(
+            model=model,
             lora_stack=lora_stack,
             semantic_maps=semantic_maps,
             merge_spec=merge_spec,

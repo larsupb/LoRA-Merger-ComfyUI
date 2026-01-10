@@ -16,8 +16,16 @@ This test replicates the COMPLETE workflow from PM-Gradient-Analyzer-SD1.5.json:
 import sys
 import os
 import time
+import logging
 from pathlib import Path
 from typing import Tuple, Dict, Any
+
+# Configure basic info-level logging for the test run
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("pm_gradient_analyzer_sd15_e2e")
 
 # Set PyTorch memory management for better VRAM handling
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
@@ -53,19 +61,11 @@ except ImportError as e:
     traceback.print_exc()
     sys.exit(1)
 
-# Import custom nodes
-try:
-    from src.lora_power_stacker import LoraPowerStacker
-    from src.lora_apply import LoraApply
-    from src.nodes_semantic_analysis import PMLoRASemanticAnalyzerGradient
-    from src.nodes_semantic_merge import PMSemanticMergeSpec, PMSemanticMerger
-
-    print("✓ Imported custom nodes")
-except ImportError as e:
-    print(f"✗ Failed to import custom nodes: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
+from src.lora_power_stacker import LoraPowerStacker
+from src.lora_apply import LoraApply
+from src.nodes_semantic_analysis import PMLoRASemanticAnalyzerGradient
+from src.nodes_semantic_merge import PMSemanticMergeStatsViewer, PMSemanticMergeSpec, \
+PMSemanticMerger
 
 # Test configuration from workflow (PM-Gradient-Analyzer-SD1.5.json)
 CONFIG = {
@@ -83,7 +83,7 @@ CONFIG = {
     "checkpoint_name": "checkpoints/SD1.5/analogMadness_v70.safetensors",
     "features": "hair,earrings,face,breasts",
     "architecture_hint": "sd15",
-    "num_samples": 10,  # From workflow
+    "num_samples": 1,  # From workflow
     "use_cache": False,  # From workflow
     "device": "auto",
     "dtype": "float16",
@@ -91,11 +91,10 @@ CONFIG = {
     "gpu_memory_gb": 0.0,  # 0 = auto-detect 80% of VRAM
 
     # Merge spec (from node 113)
-    "merge_spec": "face from TessaF-LoRA-SD15-v4-AM-D128-A64, hair from TessaF-LoRA-SD15-v4-AM-D128-A64, earrings from TessaF-LoRA-SD15-v4-AM-D128-A64, breasts from SarahF-LoRA-SD15-v52-AM-D128-A64",
-
+    "merge_spec": "face from SarahF-LoRA-SD15-v52-AM-D128-A64 2 exclusive, hair from SarahF-LoRA-SD15-v52-AM-D128-A64 exclusive, earrings from SarahF-LoRA-SD15-v52-AM-D128-A64 exclusive, breasts from TessaF-LoRA-SD15-v4-AM-D128-A64 2 exclusive",
     # Prompts (from nodes 6 and 7)
     # Note: Workflow has empty positive prompt, using generic SD1.5 prompt instead
-    "positive_prompt": """A photorealistic portrait of a woman, nude, standing, breasts, professional photography,
+    "positive_prompt": """A photorealistic portrait of a woman, nude, standing, professional photography,
 high detail, sharp focus, natural lighting, 8k uhd, masterpiece, best quality""",
     "negative_prompt": "text, watermark",
 
@@ -113,7 +112,8 @@ high detail, sharp focus, natural lighting, 8k uhd, masterpiece, best quality"""
     "denoise": 1.0,
 
     # Output
-    "output_image": "test_output_gradient_analyzer_sd15.png",
+    "output_name": "test_semantic_merge_lora",
+    "output_image": "test_semantic_merge_lora_image.png",
 }
 
 
@@ -185,10 +185,6 @@ def main():
         print(f"  Layer offloading: {CONFIG['offload_layers']}")
         print(f"  GPU memory limit: {CONFIG['gpu_memory_gb']} GB (0=auto-detect)")
         print()
-        print("  ⚠ This may take 2-10 minutes on first run (downloads SD1.5 config + analysis)")
-        print("  ⚠ Subsequent runs will be much faster if cache is enabled")
-        print("  ⚠ With 8GB VRAM, offloading is enabled for better memory management")
-        print()
 
         analysis_start = time.time()
         semantic_maps, analysis_info = analyzer.analyze(
@@ -201,8 +197,6 @@ def main():
             device=CONFIG["device"],
             dtype=CONFIG["dtype"],
             num_samples=CONFIG["num_samples"],
-            offload_layers=CONFIG["offload_layers"],
-            gpu_memory_gb=CONFIG["gpu_memory_gb"],
         )
         analysis_time = time.time() - analysis_start
 
@@ -224,24 +218,49 @@ def main():
         current_step += 1
         test_step(current_step, total_steps, "Semantic LoRA Merging")
 
+        # Build mapping of LoRA name -> file path for semantic merger
+        lora_paths = {}
+        for name, meta in lora_stack.items():
+            file_path = meta.get("file_path") if isinstance(meta, dict) else None
+            if not file_path:
+                raise ValueError(f"LoRA '{name}' is missing a file_path for semantic merge")
+            lora_paths[name] = file_path
+
         merger = PMSemanticMerger()
-        (merged_lora,) = merger.merge_semantic(
-            model=model,
-            lora_stack=lora_stack,
+        merged_lora, merge_report, stats = merger.merge(
+            lora_paths=lora_paths,
             semantic_maps=semantic_maps,
-            merge_spec=merge_spec,
+            specification=CONFIG["merge_spec"],
+            output_name=CONFIG["output_name"],
             lambda_value=1.0,
         )
-        print(f"✓ LoRAs merged semantically")
-        print(f"  Merged LoRA name: {merged_lora.get('name', 'unknown')}")
-        print(f"  Merged layers: {len(merged_lora.get('lora', {}))}")
+        print(f"✓ LoRAs merged semantically to '{merged_lora}'")
 
-        # Step 6: Apply Merged LoRA
+        stats_viewer = PMSemanticMergeStatsViewer()
+        print(stats_viewer.view_stats(statistics=stats, view_type="summary", verbose=True)[0])
+
+        # Step 6: Load and apply merged LoRA
         current_step += 1
         test_step(current_step, total_steps, "Apply Merged LoRA to Model")
 
+        # Build key_map for LoRA loading (includes both UNet and CLIP keys)
+        key_map = {}
+        if model is not None:
+            key_map = comfy.lora.model_lora_keys_unet(model.model, key_map)
+        if clip is not None:
+            key_map = comfy.lora.model_lora_keys_clip(clip.cond_stage_model, key_map)
+
+        lora_raw = comfy.utils.load_torch_file(merged_lora, safe_load=True)
+        patch_dict = comfy.lora.load_lora(lora_raw, key_map)
+        lora_bundle = {
+            'name': "merged_lora",
+            'lora': patch_dict,
+            'lora_raw': None,
+            'strength_model': 1,
+            'strength_clip': 1,
+        }
         lora_apply = LoraApply()
-        model, clip = lora_apply.apply_merged_lora(model, clip, merged_lora)
+        model, clip = lora_apply.apply_merged_lora(model, clip, lora_bundle)
         print(f"✓ Merged LoRA applied to model")
 
         # Step 7: Encode Prompts
