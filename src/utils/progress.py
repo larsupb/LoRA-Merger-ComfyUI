@@ -6,7 +6,23 @@ Provides ThreadSafeProgressBar wrapper for ComfyUI progress bars.
 
 import threading
 from typing import Optional
-import comfy.utils
+
+# Optional import for ComfyUI - provide fallback for testing
+try:
+    import comfy.utils
+    COMFY_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    COMFY_AVAILABLE = False
+    # Mock ComfyUI progress bar for testing
+    class _MockProgressBar:
+        def __init__(self, total):
+            self.total = total
+        def update(self, n):
+            pass
+
+    class comfy:  # noqa: N801
+        class utils:
+            ProgressBar = _MockProgressBar
 
 
 class ThreadSafeProgressBar:

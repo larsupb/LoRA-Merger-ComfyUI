@@ -146,40 +146,75 @@ class GradientSemanticAnalyzer:
 
         This ensures feature weights can be used directly as mixing coefficients.
 
+        IMPORTANT: This function now projects diffusers parameter paths to semantic group
+        keys (e.g., "up_blocks.0.attn1.to_q" → "self_attention.query") to make the
+        semantic maps compatible with the adapter training system.
+
         Args:
             semantic_map: {feature: {layer_key: importance_tensor}}
 
         Returns:
-            Normalized semantic map
+            Normalized semantic map with semantic group keys
         """
-        # Collect all layer keys
-        all_layers = set()
-        for feature_map in semantic_map.values():
-            all_layers.update(feature_map.keys())
+        from .training.semantic_key_projection import project_layer_key_to_semantic_key
 
-        # Normalize per layer
-        for layer_key in all_layers:
-            # Collect tensors for this layer across features
-            layer_tensors = {}
-            for feature, feature_map in semantic_map.items():
-                if layer_key in feature_map:
-                    layer_tensors[feature] = feature_map[layer_key]
+        # Step 1: Project diffusers parameter paths to semantic group keys
+        projected_map = {}
+        for feature, feature_map in semantic_map.items():
+            projected_map[feature] = {}
 
-            if not layer_tensors:
+            for layer_key, importance in feature_map.items():
+                semantic_key = project_layer_key_to_semantic_key(layer_key)
+
+                # Aggregate importances for the same semantic group (average)
+                if semantic_key in projected_map[feature]:
+                    # Average with existing importance
+                    existing = projected_map[feature][semantic_key]
+                    count_key = f"{semantic_key}__count"
+                    count = projected_map[feature].get(count_key, 1)
+
+                    # Running average: new_avg = (old_avg * count + new_value) / (count + 1)
+                    projected_map[feature][semantic_key] = (existing * count + importance) / (count + 1)
+                    projected_map[feature][count_key] = count + 1
+                else:
+                    projected_map[feature][semantic_key] = importance
+                    projected_map[feature][f"{semantic_key}__count"] = 1
+
+        # Remove count tracking keys
+        for feature in projected_map:
+            count_keys = [k for k in projected_map[feature].keys() if k.endswith("__count")]
+            for k in count_keys:
+                del projected_map[feature][k]
+
+        # Step 2: Normalize per semantic group (same as before, but now with semantic keys)
+        # Collect all semantic groups
+        all_groups = set()
+        for feature_map in projected_map.values():
+            all_groups.update(feature_map.keys())
+
+        # Normalize per semantic group
+        for semantic_key in all_groups:
+            # Collect tensors for this semantic group across features
+            group_tensors = {}
+            for feature, feature_map in projected_map.items():
+                if semantic_key in feature_map:
+                    group_tensors[feature] = feature_map[semantic_key]
+
+            if not group_tensors:
                 continue
 
             # Stack and sum
-            stacked = torch.stack(list(layer_tensors.values()))
+            stacked = torch.stack(list(group_tensors.values()))
             total = stacked.sum(dim=0, keepdim=True)
 
             # Avoid division by zero
             total = torch.clamp(total, min=1e-8)
 
             # Normalize each feature's importance
-            for feature, tensor in layer_tensors.items():
-                semantic_map[feature][layer_key] = tensor / total.squeeze(0)
+            for feature, tensor in group_tensors.items():
+                projected_map[feature][semantic_key] = tensor / total.squeeze(0)
 
-        return semantic_map
+        return projected_map
 
     def _analyze_sd_with_gradients(
             self,

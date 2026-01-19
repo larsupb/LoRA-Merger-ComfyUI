@@ -3,10 +3,11 @@ from typing import Tuple, Dict, Any, List
 import torch
 import folder_paths
 
-from src.semantic import get_cache, GradientSemanticAnalyzer
-from src.nodes_semantic_merge import logger
-from src.types import LORA_STACK
-from src.utils import detect_lora_architecture
+
+from .nodes_semantic_merge import logger
+from .semantic import GradientSemanticAnalyzer, get_cache
+from .types import LORA_STACK
+from .utils import detect_lora_architecture
 
 
 class PMLoRASemanticAnalyzerHeuristic:

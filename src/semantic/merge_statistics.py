@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Any
 from collections import defaultdict
 from enum import Enum
 
-from src.semantic.key_utils import NormalizedKey
+from .key_utils import NormalizedKey
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,12 @@ All modules should import types from this module for consistency.
 
 from typing import Dict, Tuple, List, Set, Any, Optional, Protocol, TypedDict, Union
 import torch
-from comfy.weight_adapter import LoRAAdapter
+
+# Optional import for ComfyUI - not required for testing
+try:
+    from comfy.weight_adapter import LoRAAdapter
+except (ImportError, ModuleNotFoundError):
+    LoRAAdapter = None  # Will be None in testing environments
 
 
 # ============================================================================

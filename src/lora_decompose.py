@@ -121,8 +121,9 @@ Features hash-based caching to skip recomputation when inputs haven't changed.""
         for lora_name, lora_key_dict in lora_key_dicts.items():
             for key in lora_key_dict.keys():
                 lora_adapter = lora_key_dict[key]
-                up, down, _, _, _, _ = lora_adapter.weights
-                sum_ += up.sum().item() + down.sum().item()
+                for layer_key, layer_weights in lora_adapter.items():
+                    up, down, _, _, _, _ = layer_weights.weights
+                    sum_ += up.sum().item() + down.sum().item()
         return sum_
 
     def decompose(self, key_dicts, device, decomposition_method, svd_rank) -> LORA_TENSORS_BY_LAYER:
