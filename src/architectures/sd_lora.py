@@ -158,7 +158,7 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
             up, down, alpha, mid, dora_scale, reshape = lora_settings.weights
             up_parts.append(up)
             down_parts.append(down)
-            alphas.append(alpha if alpha is not None else 1.0)
+            alphas.append(alpha if alpha is not None else float(down.shape[0]))
 
         # Check if all alphas are the same
         alpha_val = alphas[0]
@@ -181,8 +181,10 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
         alpha_key = "lora_unet_{}.alpha".format(key_suffix)
 
         # Convert alpha to tensor, handling both float and tensor inputs
+        # When alpha is None, ComfyUI uses scale=1.0 (equivalent to alpha=rank).
+        # We must save alpha=rank so the LoRA reloads at the correct strength.
         if alpha_val is None:
-            alpha_tensor = torch.tensor(1.0)
+            alpha_tensor = torch.tensor(float(down_combined.shape[0]))
         elif isinstance(alpha_val, torch.Tensor):
             alpha_tensor = alpha_val.clone().detach().cpu()
         else:
@@ -221,8 +223,10 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
                 alpha_key = "lora_unet_{}.alpha".format(key_suffix)
 
                 # Convert alpha to tensor, handling both float and tensor inputs
+                # When alpha is None, ComfyUI uses scale=1.0 (equivalent to alpha=rank).
+                # We must save alpha=rank so the LoRA reloads at the correct strength.
                 if alpha is None:
-                    alpha_tensor = torch.tensor(1.0)
+                    alpha_tensor = torch.tensor(float(down.shape[0]))
                 elif isinstance(alpha, torch.Tensor):
                     alpha_tensor = alpha.clone().detach().cpu()
                 else:
@@ -241,8 +245,10 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
                 alpha_key = "{}.alpha".format(out_key)
 
                 # Convert alpha to tensor, handling both float and tensor inputs
+                # When alpha is None, ComfyUI uses scale=1.0 (equivalent to alpha=rank).
+                # We must save alpha=rank so the LoRA reloads at the correct strength.
                 if alpha is None:
-                    alpha_tensor = torch.tensor(1.0)
+                    alpha_tensor = torch.tensor(float(down.shape[0]))
                 elif isinstance(alpha, torch.Tensor):
                     alpha_tensor = alpha.clone().detach().cpu()
                 else:
