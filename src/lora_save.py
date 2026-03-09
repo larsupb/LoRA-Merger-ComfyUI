@@ -3,8 +3,8 @@ import os
 import comfy
 import folder_paths
 
-
 from .architectures.sd_lora import convert_to_regular_lora
+
 
 class LoraSave:
     def __init__(self):
@@ -12,23 +12,33 @@ class LoraSave:
 
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": {
-            "model": ("MODEL",),
-            "lora": ("LoRABundle",),
-            "file_name": ("STRING", {"multiline": False, "default": "merged"}), "extension": (["safetensors"], ),
-        }}
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "lora": ("LoRABundle",),
+                "file_name": ("STRING", {"multiline": False, "default": "merged"}),
+                "extension": (["safetensors"],),
+            },
+            "optional": {
+                "clip": ("CLIP",),
+            },
+        }
+
     RETURN_TYPES = ()
     FUNCTION = "lora_save"
     CATEGORY = "LoRA PowerMerge"
 
     OUTPUT_NODE = True
 
-    def lora_save(self, model, lora, file_name, extension):
-        save_path = os.path.join(folder_paths.folder_names_and_paths["loras"][0][0], file_name + "." + extension)
+    def lora_save(self, model, lora, file_name, extension, clip=None):
+        save_path = os.path.join(
+            folder_paths.folder_names_and_paths["loras"][0][0],
+            file_name + "." + extension,
+        )
 
         # Convert model weights from ComfyUI format to regular LoRA format
-        state_dict = lora['lora']
-        new_state_dict = convert_to_regular_lora(model, state_dict)
+        state_dict = lora["lora"]
+        new_state_dict = convert_to_regular_lora(model, state_dict, clip)
 
         # CLIP layers are now merged as part of the merge process,
         # so we don't need to copy them from lora_raw anymore.
