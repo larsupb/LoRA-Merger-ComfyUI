@@ -1,7 +1,7 @@
 import logging
 import math
 import re
-from typing import List, Set, Dict
+from typing import Dict, List, Set
 
 import comfy
 import torch
@@ -9,11 +9,12 @@ from comfy.model_patcher import ModelPatcher
 from torch import Tensor
 
 from ..types import (
-    LORA_STACK,
     LORA_KEY_DICT,
+    LORA_STACK,
     LORA_TENSOR_DICT,
     BlockNameInfo,
 )
+from ..utils import is_clip_layer
 
 
 def weights_as_tuple(up: torch.Tensor, down: torch.Tensor, alpha: torch.Tensor):
@@ -37,21 +38,25 @@ def calc_up_down_alphas(
     loras_lora_key_dict: LORA_STACK,
     key: str,
     load_device: torch.device = None,
-    scale_to_alpha_0: bool = False
+    scale_to_alpha_0: bool = False,
 ) -> LORA_TENSOR_DICT:
     """
-       Calculate up, down tensors and alphas for a given key.
+    Calculate up, down tensors and alphas for a given key.
 
-       Args:
-           loras_lora_key_dict: Dictionary containing LoRA names and their respective keys.
-           key: The key to calculate values for.
-           load_device: Device to load tensors on.
-           scale_to_alpha_0: Whether to scale alphas to the alpha of lora 0.
+    Args:
+        loras_lora_key_dict: Dictionary containing LoRA names and their respective keys.
+        key: The key to calculate values for.
+        load_device: Device to load tensors on.
+        scale_to_alpha_0: Whether to scale alphas to the alpha of lora 0.
 
-       Returns:
-           List of tuples containing up, down tensors and alpha values.
+    Returns:
+        List of tuples containing up, down tensors and alpha values.
     """
-    owners = [lora_name for lora_name, lora_key_dict in loras_lora_key_dict.items() if key in lora_key_dict]
+    owners = [
+        lora_name
+        for lora_name, lora_key_dict in loras_lora_key_dict.items()
+        if key in lora_key_dict
+    ]
     if len(owners) == 0:
         raise ValueError(f"Key {key} not found in any LoRA provided.")
 
@@ -106,13 +111,17 @@ def sd_to_diffusers_map(model: ModelPatcher) -> Dict[str, str]:
     for k in diffusers_keys:
         if k.endswith(".weight"):
             unet_key = "diffusion_model.{}".format(diffusers_keys[k])
-            key_lora = k[:-len(".weight")].replace(".", "_")
+            key_lora = k[: -len(".weight")].replace(".", "_")
             key_map["lora_unet_{}".format(key_lora)] = unet_key
-            key_map["lycoris_{}".format(key_lora)] = unet_key  # simpletuner lycoris format
+            key_map["lycoris_{}".format(key_lora)] = (
+                unet_key  # simpletuner lycoris format
+            )
 
             diffusers_lora_prefix = ["", "unet."]
             for p in diffusers_lora_prefix:
-                diffusers_lora_key = "{}{}".format(p, k[:-len(".weight")].replace(".to_", ".processor.to_"))
+                diffusers_lora_key = "{}{}".format(
+                    p, k[: -len(".weight")].replace(".to_", ".processor.to_")
+                )
                 if diffusers_lora_key.endswith(".to_out.0"):
                     diffusers_lora_key = diffusers_lora_key[:-2]
                 key_map[diffusers_lora_key] = unet_key
@@ -122,9 +131,75 @@ def sd_to_diffusers_map(model: ModelPatcher) -> Dict[str, str]:
     return inverse_map
 
 
-def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
-    diffusers_map = sd_to_diffusers_map(model)
+def _lora_key_priority(key: str) -> int:
+    """Prefer stable ComfyUI-native key styles when multiple aliases map to one internal key."""
+    if key.startswith("lora_unet_"):
+        return 0
+    if key.startswith(("lora_te1_", "lora_te2_", "lora_te_", "lora_prior_te_")):
+        return 1
+    if key.startswith(("text_encoder.", "text_encoder_2.")):
+        return 2
+    if key.startswith("unet."):
+        return 3
+    if key.startswith("text_encoders."):
+        return 4
+    if key.startswith("lycoris_"):
+        return 5
+    return 6
+
+
+def build_internal_to_lora_map(model: ModelPatcher, clip=None) -> Dict[str, str]:
+    """Build internal-weight-key -> lora-key mapping using the same logic as core Load LoRA."""
+    key_map: Dict[str, str] = {}
+    if model is not None:
+        key_map = comfy.lora.model_lora_keys_unet(model.model, key_map)
+    if clip is not None:
+        key_map = comfy.lora.model_lora_keys_clip(clip.cond_stage_model, key_map)
+
+    reverse_map: Dict[str, str] = {}
+    for lora_key, internal_key in key_map.items():
+        current = reverse_map.get(internal_key)
+        if current is None or _lora_key_priority(lora_key) < _lora_key_priority(
+            current
+        ):
+            reverse_map[internal_key] = lora_key
+    return reverse_map
+
+
+def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT, clip=None):
+    diffusers_map = build_internal_to_lora_map(model, clip)
     out = {}
+
+    # Determine which CLIP encoders are present (affects key naming per ComfyUI's logic)
+    clip_l_present = any(
+        str(k[0] if isinstance(k, tuple) else k).startswith("clip_l.")
+        for k in state_dict.keys()
+    )
+
+    def get_clip_lora_prefix(key_base: str) -> str:
+        """
+        Determine the correct LoRA prefix for CLIP keys based on ComfyUI's logic.
+
+        Rules (matching ComfyUI's model_lora_keys_clip):
+        - clip_l always uses lora_te1_text_model
+        - clip_g uses lora_te2_text_model ONLY if clip_l is also present (SDXL)
+        - clip_g uses lora_te_text_model if clip_l is NOT present (SDXL-Refiner)
+        - clip_h uses lora_te_text_model
+        """
+        if key_base.startswith("clip_l."):
+            return "lora_te1_text_model"
+        elif key_base.startswith("clip_g."):
+            # SDXL: If both clip_l and clip_g present, g is te2
+            # SDXL-Refiner: If only clip_g, it's te (not te2)
+            if clip_l_present:
+                return "lora_te2_text_model"
+            else:
+                return "lora_te_text_model"
+        elif key_base.startswith("clip_h."):
+            return "lora_te_text_model"
+        else:
+            # Generic CLIP or text encoder key
+            return "lora_te_text_model"
 
     # Group split QKV weights by base key
     qkv_groups = {}
@@ -146,7 +221,22 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
     # Process QKV groups - concatenate split components
     for base_key, split_keys in qkv_groups.items():
         # Sort by offset to ensure correct order (Q, K, V)
-        split_keys_sorted = sorted(split_keys, key=lambda x: x[1][1])  # Sort by offset
+        # Handle both tuple-key metadata shapes:
+        # - (base_key, offset_int)
+        # - (base_key, (dim, offset, length))
+        def _extract_offset(split_key) -> int:
+            meta = split_key[1]
+            if isinstance(meta, int):
+                return meta
+            if (
+                isinstance(meta, (tuple, list))
+                and len(meta) > 1
+                and isinstance(meta[1], int)
+            ):
+                return meta[1]
+            return 0
+
+        split_keys_sorted = sorted(split_keys, key=_extract_offset)
 
         # Extract tensors from each split
         up_parts = []
@@ -161,9 +251,22 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
             alphas.append(alpha if alpha is not None else 1.0)
 
         # Check if all alphas are the same
-        alpha_val = alphas[0]
-        if not all(abs(a - alpha_val) < 1e-6 for a in alphas):
-            logging.warning(f"QKV components have different alphas: {alphas}. Using first alpha: {alpha_val}")
+        def _alpha_to_float(alpha_value) -> float:
+            if isinstance(alpha_value, torch.Tensor):
+                if alpha_value.numel() != 1:
+                    logging.warning(
+                        f"Non-scalar alpha tensor detected for {base_key} with shape {tuple(alpha_value.shape)}; using first element for comparison"
+                    )
+                    return float(alpha_value.detach().reshape(-1)[0].cpu().item())
+                return float(alpha_value.detach().cpu().item())
+            return float(alpha_value)
+
+        alpha_scalars = [_alpha_to_float(a) for a in alphas]
+        alpha_val = alpha_scalars[0]
+        if not all(abs(a - alpha_val) < 1e-6 for a in alpha_scalars):
+            logging.warning(
+                f"QKV components have different alphas: {alpha_scalars}. Using first alpha: {alpha_val}"
+            )
 
         # Concatenate along the output dimension (dim=0 for up tensor)
         up_combined = torch.cat(up_parts, dim=0)
@@ -171,14 +274,46 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
         down_combined = down_parts[0]
 
         # Generate key for combined QKV
-        key_base = base_key.replace("diffusion_model.", "")
-        if key_base.endswith(".weight"):
-            key_base = key_base[:-len(".weight")]
-        key_suffix = key_base.replace(".", "_")
+        if base_key in diffusers_map:
+            out_key = diffusers_map[base_key]
+            up_key = "{}.lora_up.weight".format(out_key)
+            down_key = "{}.lora_down.weight".format(out_key)
+            alpha_key = "{}.alpha".format(out_key)
+        # Determine if this is a CLIP layer and use appropriate prefix
+        elif is_clip_layer(base_key):
+            # CLIP layers get text encoder prefixes
+            key_base = base_key
+            # Determine the correct prefix based on which CLIP encoders are present
+            lora_prefix = get_clip_lora_prefix(key_base)
 
-        up_key = "lora_unet_{}.lora_up.weight".format(key_suffix)
-        down_key = "lora_unet_{}.lora_down.weight".format(key_suffix)
-        alpha_key = "lora_unet_{}.alpha".format(key_suffix)
+            # Remove CLIP prefixes
+            for prefix in ["clip_l.", "clip_g.", "clip_h."]:
+                if key_base.startswith(prefix):
+                    key_base = key_base[len(prefix) :]
+                    break
+
+            # Remove transformer.text_model. prefix if present (ComfyUI internal format)
+            if key_base.startswith("transformer.text_model."):
+                key_base = key_base[len("transformer.text_model.") :]
+
+            # Strip .weight suffix if present
+            if key_base.endswith(".weight"):
+                key_base = key_base[: -len(".weight")]
+
+            key_suffix = key_base.replace(".", "_")
+            up_key = "{}_{}.lora_up.weight".format(lora_prefix, key_suffix)
+            down_key = "{}_{}.lora_down.weight".format(lora_prefix, key_suffix)
+            alpha_key = "{}_{}.alpha".format(lora_prefix, key_suffix)
+        else:
+            # UNet/DiT layers get lora_unet prefix
+            key_base = base_key.replace("diffusion_model.", "")
+            if key_base.endswith(".weight"):
+                key_base = key_base[: -len(".weight")]
+            key_suffix = key_base.replace(".", "_")
+
+            up_key = "lora_unet_{}.lora_up.weight".format(key_suffix)
+            down_key = "lora_unet_{}.lora_down.weight".format(key_suffix)
+            alpha_key = "lora_unet_{}.alpha".format(key_suffix)
 
         # Convert alpha to tensor, handling both float and tensor inputs
         if alpha_val is None:
@@ -203,22 +338,53 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
 
             # Check if this is a DiT architecture key (doesn't need conversion)
             # DiT keys look like: diffusion_model.layers.X.feed_forward.w1.weight
-            if sd_key not in diffusers_map:
+            if key_str not in diffusers_map:
                 # For DiT architecture, keys are already in correct format
                 # Just convert to standard LoRA format with .lora_up/.lora_down suffix
                 up, down, alpha, mid, dora_scale, reshape = lora_data
 
-                # Strip .weight suffix if present before converting to LoRA format
-                # ComfyUI internal keys end with .weight, but LoRA keys should not have it in the middle
-                key_base = key_str.replace("diffusion_model.", "")
-                if key_base.endswith(".weight"):
-                    key_base = key_base[:-len(".weight")]
+                # Determine the appropriate prefix for the key
+                if is_clip_layer(key_str):
+                    # CLIP layers get text encoder prefixes
+                    # clip_l. -> lora_te1_text_model (SDXL TE1, OpenAI CLIP)
+                    # clip_g. -> lora_te2_text_model (SDXL TE2, only if clip_l present)
+                    # clip_g. -> lora_te_text_model (SDXL-Refiner, if clip_l NOT present)
 
-                # Convert dots to underscores for LoRA naming convention
-                key_suffix = key_base.replace(".", "_")
-                up_key = "lora_unet_{}.lora_up.weight".format(key_suffix)
-                down_key = "lora_unet_{}.lora_down.weight".format(key_suffix)
-                alpha_key = "lora_unet_{}.alpha".format(key_suffix)
+                    key_base = key_str
+                    # Determine the correct prefix based on which CLIP encoders are present
+                    lora_prefix = get_clip_lora_prefix(key_base)
+
+                    # Remove CLIP prefixes
+                    for prefix in ["clip_l.", "clip_g.", "clip_h."]:
+                        if key_base.startswith(prefix):
+                            key_base = key_base[len(prefix) :]
+                            break
+
+                    # Remove transformer.text_model. prefix if present (ComfyUI internal format)
+                    if key_base.startswith("transformer.text_model."):
+                        key_base = key_base[len("transformer.text_model.") :]
+
+                    # Strip .weight suffix if present
+                    if key_base.endswith(".weight"):
+                        key_base = key_base[: -len(".weight")]
+
+                    # Convert dots to underscores for LoRA naming convention
+                    key_suffix = key_base.replace(".", "_")
+                    up_key = "{}_{}.lora_up.weight".format(lora_prefix, key_suffix)
+                    down_key = "{}_{}.lora_down.weight".format(lora_prefix, key_suffix)
+                    alpha_key = "{}_{}.alpha".format(lora_prefix, key_suffix)
+
+                else:
+                    # UNet/DiT layers get lora_unet prefix
+                    key_base = key_str.replace("diffusion_model.", "")
+                    if key_base.endswith(".weight"):
+                        key_base = key_base[: -len(".weight")]
+
+                    # Convert dots to underscores for LoRA naming convention
+                    key_suffix = key_base.replace(".", "_")
+                    up_key = "lora_unet_{}.lora_up.weight".format(key_suffix)
+                    down_key = "lora_unet_{}.lora_down.weight".format(key_suffix)
+                    alpha_key = "lora_unet_{}.alpha".format(key_suffix)
 
                 # Convert alpha to tensor, handling both float and tensor inputs
                 if alpha is None:
@@ -233,7 +399,7 @@ def convert_to_regular_lora(model, state_dict: LORA_KEY_DICT):
                 out[alpha_key] = alpha_tensor
             else:
                 # Standard SD UNet architecture - use mapping
-                out_key = diffusers_map[sd_key]
+                out_key = diffusers_map[key_str]
 
                 up, down, alpha, mid, dora_scale, reshape = lora_data
                 up_key = "{}.lora_up.weight".format(out_key)
@@ -262,7 +428,8 @@ def detect_block_names(layer_key: str) -> BlockNameInfo:
         layer_key = layer_key[0]
 
     # With transformer_blocks
-    exp_with_transformer = re.compile(r"""
+    exp_with_transformer = re.compile(
+        r"""
         (?:diffusion_model\.)?                                  # optional prefix
         (?P<block_type>input_blocks|middle_block|output_blocks)
         \.
@@ -275,16 +442,21 @@ def detect_block_names(layer_key: str) -> BlockNameInfo:
         \.
         (?P<component>attn1|attn2|ff|proj_in|proj_out)           # top-level component
         (?:\..+)?                                                # allow nested submodules (e.g. .to_q.weight)
-    """, re.VERBOSE)
+    """,
+        re.VERBOSE,
+    )
     # Projection in and out blocks are not part of transformer_blocks, so we need a simpler regex for those.
-    exp_simple = re.compile(r"""
+    exp_simple = re.compile(
+        r"""
         (?P<block_type>input_blocks|middle_block|output_blocks)
         \.
         (?P<block_idx>\d+)(?:\.(?P<inner_idx>\d+))?
         \.
         (?P<component>proj_in|proj_out)
         (?:\..+)?                                                # allow nested submodules (e.g. .to_q.weight)
-    """, re.VERBOSE)
+    """,
+        re.VERBOSE,
+    )
 
     for exp in [exp_with_transformer, exp_simple]:
         match = exp.search(layer_key)
@@ -294,12 +466,14 @@ def detect_block_names(layer_key: str) -> BlockNameInfo:
                 "block_idx": match.group("block_idx"),
                 "inner_idx": match.group("inner_idx"),
                 "component": match.group("component"),
-                "main_block": f"{match.group("block_type")}.{match.group("block_idx")}",
-                "sub_block": f'{match.group("block_type")}.{match.group("block_idx")}',
-                "transformer_idx": None
+                "main_block": f"{match.group('block_type')}.{match.group('block_idx')}",
+                "sub_block": f"{match.group('block_type')}.{match.group('block_idx')}",
+                "transformer_idx": None,
             }
             if "transformer_idx" in match.groupdict():
                 out["transformer_idx"] = match.group("transformer_idx")
-                out["sub_block"] = f'{out["block_type"]}.{out["block_idx"]}.{out["transformer_idx"]}'
+                out["sub_block"] = (
+                    f"{out['block_type']}.{out['block_idx']}.{out['transformer_idx']}"
+                )
             return out
     return None
