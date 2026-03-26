@@ -17,7 +17,12 @@ from contextlib import contextmanager
 import torch
 from mergekit.architecture import WeightInfo
 from mergekit.common import ModelReference, ModelPath, ImmutableMap
-from mergekit.io.tasks import GatherTensors
+from mergekit.io.tasks import GatherTensors, Task
+# mergekit's Task model doesn't set arbitrary_types_allowed, which breaks
+# with pydantic >=2.12 when Task[torch.Tensor] is used as a base class.
+# Patch both the base and the parametrized generic before importing merge_methods.
+Task.model_config["arbitrary_types_allowed"] = True
+Task[torch.Tensor].model_config["arbitrary_types_allowed"] = True
 from mergekit.merge_methods import REGISTERED_MERGE_METHODS
 from mergekit.merge_methods.generalized_task_arithmetic import GTATask
 from mergekit.merge_methods.karcher import KarcherMerge
