@@ -294,7 +294,7 @@ def detect_block_names(layer_key: str) -> BlockNameInfo:
                 "block_idx": match.group("block_idx"),
                 "inner_idx": match.group("inner_idx"),
                 "component": match.group("component"),
-                "main_block": f"{match.group("block_type")}.{match.group("block_idx")}",
+                "main_block": f'{match.group("block_type")}.{match.group("block_idx")}',
                 "sub_block": f'{match.group("block_type")}.{match.group("block_idx")}',
                 "transformer_idx": None
             }
