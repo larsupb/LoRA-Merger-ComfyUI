@@ -6,9 +6,11 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw
 
+import comfy.model_management
+import comfy.sample
 import comfy.utils
-from comfy_extras.nodes_custom_sampler import SamplerCustom
-
+import latent_preview
+from .comfy_util import rebuild_guider_with_patches
 from .lora_mergekit_merge import LoraMergerMergekit
 from .types import MergeContext
 from .utility import load_font
@@ -115,15 +117,9 @@ class LoRAParameterSweepSampler:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model": ("MODEL",),
                 "vae": ("VAE",),
-                "add_noise": ("BOOLEAN", {"default": True}),
-                "noise_seed": (
-                    "INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}
-                ),
-                "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01}),
-                "positive": ("CONDITIONING",),
-                "negative": ("CONDITIONING",),
+                "noise": ("NOISE",),
+                "guider": ("GUIDER",),
                 "sampler": ("SAMPLER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
@@ -178,8 +174,8 @@ class LoRAParameterSweepSampler:
     Maximum 64 images total. Progress tracking shows overall completion.
     """
 
-    def sample(self, model, vae, add_noise, noise_seed, cfg, positive, negative, sampler, sigmas,
-               latent_image, merge_context: MergeContext, parameter_name: str, parameter_values: str,
+    def sample(self, vae, noise, guider, sampler, sigmas, latent_image,
+               merge_context: MergeContext, parameter_name: str, parameter_values: str,
                parameter_name_2: str = "", parameter_values_2: str = ""):
 
         # Validate parameters exist in method settings and check if they are boolean
@@ -331,22 +327,41 @@ class LoRAParameterSweepSampler:
 
         # Create merger instance for performing merges
         merger = LoraMergerMergekit()
-        ksampler = SamplerCustom()
 
-        # Initialize overall progress bar
-        pbar = comfy.utils.ProgressBar(total_images)
+        # Single progress bar spanning every sampling step across all images, with live
+        # previews — same approach as the Block/Stack samplers (instead of a coarse
+        # per-image bar plus an inner step bar that resets each image).
+        steps = sigmas.shape[-1] - 1
+        total_steps = total_images * steps
+        disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+        previewer = latent_preview.get_previewer(
+            guider.model_patcher.load_device, guider.model_patcher.model.latent_format
+        )
+        pbar = comfy.utils.ProgressBar(total_steps) if not disable_pbar else None
+        x0_holder = {}
+
+        def make_callback(image_idx):
+            img_start = image_idx * steps
+
+            def cb(step, x0, x, total_steps_inner):
+                x0_holder["x0"] = x0
+                if pbar is not None:
+                    preview_bytes = None
+                    if previewer is not None:
+                        preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
+                    pbar.update_absolute(img_start + step + 1, total_steps, preview_bytes)
+
+            return cb
 
         latents_out = []
         images_out = []
 
         # Sample for each parameter value (or parameter value combination in dual mode)
         if dual_mode:
-            # Dual parameter mode: iterate through valid combinations only
             sample_num = 0
             for param_value, param_value_2 in valid_combinations:
                 sample_num += 1
 
-                # Create a deep copy of merge context and update both parameters
                 context = copy.deepcopy(merge_context)
                 if 'settings' not in context['method']:
                     context['method']['settings'] = {}
@@ -356,7 +371,6 @@ class LoRAParameterSweepSampler:
                 logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Merging with "
                             f"{parameter_name}={param_value}, {parameter_name_2}={param_value_2}")
 
-                # Perform merge with updated parameters
                 merged_lora, _ = merger.lora_mergekit(
                     method=context['method'],
                     components=context['components'],
@@ -366,45 +380,34 @@ class LoRAParameterSweepSampler:
                     dtype=context['dtype']
                 )
 
-                # Apply merged LoRA to model
-                new_model_patcher = model.clone()
-                new_model_patcher.add_patches(merged_lora['lora'], merged_lora['strength_model'])
-
-                # Sample image
                 logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Sampling image")
-                denoised, _ = ksampler.sample(
-                    model=new_model_patcher,
-                    add_noise=add_noise,
-                    noise_seed=noise_seed,
-                    cfg=cfg,
-                    positive=positive,
-                    negative=negative,
-                    sampler=sampler,
-                    sigmas=sigmas,
-                    latent_image=latent_image,
+                denoised = self.do_sample(
+                    guider, merged_lora['lora'], merged_lora['strength_model'],
+                    latent_image, noise, sampler, sigmas,
+                    callback=make_callback(sample_num - 1), x0_output=x0_holder,
+                    disable_pbar=disable_pbar
                 )
 
                 latents_out.append(denoised)
 
-                # Decode to image for annotation
-                image = vae.decode(denoised['samples'])
-                if len(image.shape) == 5:
-                    image = image.reshape(-1, image.shape[-3], image.shape[-2], image.shape[-1])
-                image = image.squeeze(0)  # Remove batch dimension
-
-                # Annotate image with both parameters
-                annotated_image = self.annotate_image(parameter_name, param_value, image,
-                                                     parameter_name_2, param_value_2)
-                images_out.append(annotated_image)
-
-                # Update overall progress
-                pbar.update(1)
+                # vae.decode returns: (B, H, W, C) channels-last; fix iteration for B=1
+                images = vae.decode(denoised['samples'])  # (B, H, W, C)
+                if len(images.shape) == 5:
+                    images = images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
+                if images.shape[0] > 1:
+                    images = images.squeeze(0)
+                if images.dim() == 3:
+                    images = images.unsqueeze(0)
+                # images: (B, H, W, C)
+                for img in images:
+                    # img: (H, W, C) channels-last
+                    annotated_image = self.annotate_image(parameter_name, param_value, img,
+                                                         parameter_name_2, param_value_2)
+                    images_out.append(annotated_image)
         else:
-            # Single parameter mode (backward compatible)
             for i, param_value in enumerate(param_values):
                 sample_num = i + 1
 
-                # Create a deep copy of merge context and update the parameter
                 context = copy.deepcopy(merge_context)
                 if 'settings' not in context['method']:
                     context['method']['settings'] = {}
@@ -412,7 +415,6 @@ class LoRAParameterSweepSampler:
 
                 logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Merging with {parameter_name}={param_value}")
 
-                # Perform merge with updated parameter
                 merged_lora, _ = merger.lora_mergekit(
                     method=context['method'],
                     components=context['components'],
@@ -422,38 +424,26 @@ class LoRAParameterSweepSampler:
                     dtype=context['dtype']
                 )
 
-                # Apply merged LoRA to model
-                new_model_patcher = model.clone()
-                new_model_patcher.add_patches(merged_lora['lora'], merged_lora['strength_model'])
-
-                # Sample image
                 logging.info(f"PM LoRAParameterSweepSampler: [{sample_num}/{total_images}] Sampling image")
-                denoised, _ = ksampler.sample(
-                    model=new_model_patcher,
-                    add_noise=add_noise,
-                    noise_seed=noise_seed,
-                    cfg=cfg,
-                    positive=positive,
-                    negative=negative,
-                    sampler=sampler,
-                    sigmas=sigmas,
-                    latent_image=latent_image,
+                denoised = self.do_sample(
+                    guider, merged_lora['lora'], merged_lora['strength_model'],
+                    latent_image, noise, sampler, sigmas,
+                    callback=make_callback(i), x0_output=x0_holder,
+                    disable_pbar=disable_pbar
                 )
 
                 latents_out.append(denoised)
 
-                # Decode to image for annotation
-                image = vae.decode(denoised['samples'])
-                if len(image.shape) == 5:
-                    image = image.reshape(-1, image.shape[-3], image.shape[-2], image.shape[-1])
-                image = image.squeeze(0)  # Remove batch dimension
-
-                # Annotate image
-                annotated_image = self.annotate_image(parameter_name, param_value, image)
-                images_out.append(annotated_image)
-
-                # Update overall progress
-                pbar.update(1)
+                images = vae.decode(denoised['samples'])  # (B, H, W, C)
+                if len(images.shape) == 5:
+                    images = images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
+                if images.shape[0] > 1:
+                    images = images.squeeze(0)
+                if images.dim() == 3:
+                    images = images.unsqueeze(0)
+                for img in images:
+                    annotated_image = self.annotate_image(parameter_name, param_value, img)
+                    images_out.append(annotated_image)
 
         # Create grid (2D if dual mode, horizontal if single mode)
         if images_out:
@@ -479,69 +469,145 @@ class LoRAParameterSweepSampler:
         return latents_stacked, grid_image
 
     @staticmethod
+    def do_sample(guider, lora_patch_dict, lora_strength, latent_image, noise, sampler, sigmas,
+                  callback, x0_output, disable_pbar):
+        """
+        Sample a latent using CFGGuider with LoRA patches applied.
+        Args:
+            guider: Input CFGGuider to copy conds/cfg from
+            lora_patch_dict: LoRA key dict from merge
+            lora_strength: Strength to apply LoRA at
+            latent_image: Input latent dict {"samples": (B, 4, lH, lW)}
+            noise: Noise provider (NOISE type)
+            sampler: ComfyUI sampler
+            sigmas: Sigmas schedule
+            callback: Per-step callback (drives the shared progress bar + previews)
+            x0_output: Dict the callback writes the latest x0 into, for the denoised output
+            disable_pbar: Whether to disable the sampler's internal progress bar
+        Returns:
+            {"samples": Tensor (B, 4, lH, lW)}
+        """
+        model_patcher = guider.model_patcher
+
+        new_model_patcher = model_patcher.clone()
+        new_model_patcher.add_patches(lora_patch_dict, lora_strength)
+
+        # Rebuild the guider around the LoRA-patched model, preserving its
+        # exact subclass/state (e.g. Guider_DualModel's separate uncond model).
+        new_guider = rebuild_guider_with_patches(guider, new_model_patcher)
+
+        latent = latent_image.copy()
+        latent_samples = latent["samples"]  # (B, 4, lH, lW)
+        latent_samples = comfy.sample.fix_empty_latent_channels(
+            new_model_patcher, latent_samples,
+            latent.get("downscale_ratio_spacial", None), latent.get("downscale_ratio_temporal", None)
+        )
+        latent["samples"] = latent_samples
+
+        noise_mask = latent.get("noise_mask", None)
+
+        samples = new_guider.sample(
+            noise.generate_noise(latent), latent_samples, sampler, sigmas,
+            denoise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=noise.seed
+        )
+        samples = samples.to(comfy.model_management.intermediate_device())
+
+        out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out.pop("downscale_ratio_temporal", None)
+        out["samples"] = samples  # (B, 4, lH, lW) with B=1
+        if "x0" in x0_output:
+            x0_out = new_model_patcher.model.process_latent_out(x0_output["x0"].cpu())
+            if samples.is_nested:
+                latent_shapes = [s.shape for s in samples.unbind()]
+                x0_out = comfy.nested_tensor.NestedTensor(comfy.utils.unpack_latents(x0_out, latent_shapes))
+            out_denoised = latent.copy()
+            out_denoised["samples"] = x0_out
+        else:
+            out_denoised = out
+        return out_denoised
+
+    @staticmethod
     def annotate_image(parameter_name: str, parameter_value: float, img_tensor: torch.Tensor,
                       parameter_name_2: str = None, parameter_value_2: float = None) -> torch.Tensor:
         """
         Annotate an image with parameter information.
-
         Args:
             parameter_name: Name of the first parameter
             parameter_value: Value of the first parameter
-            img_tensor: Image tensor (H, W, C) in 0-1 range
+            img_tensor: Image tensor, channels-last (H, W, C) or channels-first (C, H, W)
             parameter_name_2: Optional name of the second parameter
             parameter_value_2: Optional value of the second parameter
-
         Returns:
-            Annotated image tensor with title prepended
+            Annotated image tensor with title prepended: (title_H + H, W, 3) channels-last
         """
-        # Load font with increased size (96 instead of 48 for better readability)
-        from PIL import ImageFont
-        import logging
-        import os
+        title_font = load_font()
 
-        # Font is in repository root/fonts/, not src/fonts/
-        font_path = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "fonts", "ShareTechMono-Regular.ttf")
-        try:
-            title_font = ImageFont.truetype(font_path, size=48)
-        except OSError:
-            logging.warning(f"PM LoRAParameterSweepSampler: Font not found at {font_path}, using default font.")
-            title_font = ImageFont.load_default()
+        # Normalize img_tensor to (H, W, C) channels-last
+        if img_tensor.dim() == 2:
+            img_tensor = img_tensor.unsqueeze(-1).expand(-1, -1, 3)
+        elif img_tensor.dim() == 3 and img_tensor.shape[0] == 3:
+            img_tensor = img_tensor.permute(1, 2, 0)
 
-        # Convert tensor to PIL Image
+        # img_tensor: (H, W, C)
         i = 255. * img_tensor.cpu().numpy()
         img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
 
-        # Create title text
         if parameter_name_2 is not None and parameter_value_2 is not None:
-            # Dual parameter mode
             title = f"{parameter_name}: {parameter_value:.3f}, {parameter_name_2}: {parameter_value_2:.3f}"
         else:
-            # Single parameter mode
             title = f"{parameter_name}: {parameter_value:.3f}"
 
-        # Calculate title dimensions with increased padding
-        title_bbox = title_font.getbbox(title)
-        title_width = title_bbox[2] - title_bbox[0]
-        title_padding = 12  # Increased from 6
-        line_height = title_font.getbbox("A")[3] + title_padding
-        title_text_height = line_height + title_padding
+        max_text_width = img.width - 100  # small margin
+        lines = []
+        for word in title.split():
+            if not lines:
+                lines.append(word)
+            else:
+                test_line = lines[-1] + ' ' + word
+                test_width = title_font.getbbox(test_line)[2]
+                if test_width <= max_text_width:
+                    lines[-1] = test_line
+                else:
+                    lines.append(word)
 
-        # Create title image
+        # Split any lines that are still too wide (long single words)
+        wrapped_lines = []
+        for line in lines:
+            line_width = title_font.getbbox(line)[2]
+            if line_width <= max_text_width:
+                wrapped_lines.append(line)
+            else:
+                current = ""
+                for char in line:
+                    test = current + char
+                    if title_font.getbbox(test)[2] > max_text_width:
+                        wrapped_lines.append(current)
+                        current = char
+                    else:
+                        current = test
+                if current:
+                    wrapped_lines.append(current)
+        lines = wrapped_lines
+
+        title_padding = 6
+        line_height = title_font.getbbox("A")[3] + title_padding
+        title_text_height = line_height * len(lines) + title_padding
         title_text_image = Image.new('RGB', (img.width, title_text_height), color=(0, 0, 0))
         draw = ImageDraw.Draw(title_text_image)
-        draw.text(
-            ((img.width - title_width) // 2, title_padding // 2),
-            title,
-            font=title_font,
-            fill=(255, 255, 255)
-        )
-
-        # Convert title to tensor
+        for i, line in enumerate(lines):
+            line_width = title_font.getbbox(line)[2]
+            draw.text(
+                ((img.width - line_width) // 2, i * line_height + title_padding // 2),
+                line,
+                font=title_font,
+                fill=(255, 255, 255)
+            )
+        # title_text_image_tensor: (title_H, W, 3) channels-last
         title_text_image_tensor = torch.tensor(np.array(title_text_image).astype(np.float32) / 255.0)
 
-        # Concatenate title and image vertically
+        # (title_H, W, 3) cat (H, W, 3) -> (title_H+H, W, 3)
         out_image = torch.cat([title_text_image_tensor, img_tensor], 0)
-
         return out_image
 
     @staticmethod
