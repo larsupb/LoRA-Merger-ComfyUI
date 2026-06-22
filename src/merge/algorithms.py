@@ -190,10 +190,18 @@ def sce_merge(
     # Create dummy base tensor (zeros)
     zeros_tensor = torch.zeros_like(first_tensor)
 
+    select_topk = method_args.get('select_topk', 1.0)
+
     logging.debug(
         f"SCE merge for {weight_info.name}: input shape = {input_shape}, "
         f"num_tensors = {len(weighted_tensors)}"
     )
+
+    # select_topk=0 means retain no elements, so the result is the zero base tensor.
+    # mergekit's sce_mask has a shape bug when density<=0 (returns tvs-shaped zeros
+    # instead of single-tensor-shaped zeros), causing a cascade of wrong shapes.
+    if select_topk <= 0:
+        return zeros_tensor
 
     # Execute SCE merge
     try:
@@ -201,7 +209,7 @@ def sce_merge(
             tensors=weighted_tensors,
             base_tensor=zeros_tensor,
             int8_mask=method_args.get('int8_mask', False),
-            select_topk=method_args.get('select_topk', 1.0)
+            select_topk=select_topk
         )
     except Exception as e:
         logging.error(f"SCE merge failed for {weight_info.name}: {e}")
