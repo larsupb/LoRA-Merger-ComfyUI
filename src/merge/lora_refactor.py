@@ -10,15 +10,18 @@ randomized path avoids both.
 
 Pure torch, no intra-package imports, so it stays loadable by file path in the
 repo's broken test env (mirrors gta.py)."""
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import torch
+
+Calibrator = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 
 
 def merged_delta_to_lora(delta: torch.Tensor, target_rank: int, *,
                          energy: Optional[float] = 0.99, device="cpu",
                          dtype: torch.dtype = torch.float32,
-                         oversample: int = 8, niter: int = 2
+                         oversample: int = 8, niter: int = 2,
+                         calibrate: Optional[Calibrator] = None
                          ) -> Tuple[torch.Tensor, torch.Tensor, float]:
     """Decompose ``delta`` into ``(up, down, alpha)`` via randomized SVD.
 
@@ -34,6 +37,11 @@ def merged_delta_to_lora(delta: torch.Tensor, target_rank: int, *,
             ``||delta||_F^2``. ``None`` uses ``target_rank`` directly.
         oversample: extra components sampled for randomized-SVD accuracy.
         niter: power iterations (1-2 is plenty for low-rank deltas).
+        calibrate: optional ``(U_r, S_r, V_r) -> gamma`` hook that rescales the
+            retained singular values (see src/merge/svc.py). Applied *after* the
+            rank is chosen, so it changes magnitudes only -- never the rank or
+            the singular vectors. ``None`` reproduces the uncalibrated path
+            exactly.
     """
     orig_shape = delta.shape
     orig_dtype = delta.dtype
@@ -68,7 +76,11 @@ def merged_delta_to_lora(delta: torch.Tensor, target_rank: int, *,
     else:
         r = min(target_rank, S.numel())
 
-    s_sqrt = S[:r].clamp_min(0).sqrt()
+    S_r = S[:r]
+    if calibrate is not None:
+        gamma = calibrate(U[:, :r], S_r, V[:, :r])
+        S_r = S_r * gamma.to(device=S_r.device, dtype=S_r.dtype)
+    s_sqrt = S_r.clamp_min(0).sqrt()
     up = U[:, :r] * s_sqrt.unsqueeze(0)          # [out, r]
     down = (V[:, :r] * s_sqrt.unsqueeze(0)).T    # [r, in]
     alpha = float(r)                             # scale = 1 convention
