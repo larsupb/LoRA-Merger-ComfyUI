@@ -108,3 +108,30 @@ def resolve_alpha(mode: str, n_tasks: int) -> Optional[float]:
     if mode == "balanced":
         return 1.0 / max(1, int(n_tasks))
     raise ValueError(f"unknown SVC mode {mode!r}; expected one of {SVC_MODES}")
+
+
+# ---------------------------------------------------------------- factory
+def _as_2d(t: torch.Tensor) -> torch.Tensor:
+    """Flatten a 4D conv factor to 2D, matching merged_delta_to_lora's reshape of
+    the merged delta (``up -> [out, r]``, ``down -> [r, in*kh*kw]``)."""
+    return t.reshape(t.shape[0], -1) if t.dim() == 4 else t
+
+
+def make_calibrator(factors: Sequence[Factor], mode: str
+                    ) -> Optional[Callable[[torch.Tensor, torch.Tensor, torch.Tensor],
+                                           torch.Tensor]]:
+    """Build the ``calibrate`` callback ``merged_delta_to_lora`` expects.
+
+    Returns None when ``mode`` is ``"off"`` or there is nothing to calibrate, so
+    callers can pass the result straight through without branching.
+    """
+    alpha = resolve_alpha(mode, len(factors))
+    if alpha is None or not factors:
+        return None
+
+    flat: List[Factor] = [(_as_2d(u), _as_2d(d), float(s)) for u, d, s in factors]
+
+    def _calibrate(U_r: torch.Tensor, S_r: torch.Tensor, V_r: torch.Tensor) -> torch.Tensor:
+        return calibration_gammas(U_r, S_r, V_r, flat, alpha)
+
+    return _calibrate

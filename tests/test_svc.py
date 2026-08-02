@@ -133,3 +133,40 @@ def test_resolve_alpha_rejects_unknown_mode():
 
 def test_svc_modes_tuple_is_the_widget_contract():
     assert SVC_MODES == ("off", "balanced", "suppress_only")
+
+
+from src.merge.svc import make_calibrator
+
+
+def test_make_calibrator_returns_none_when_off():
+    assert make_calibrator([(torch.randn(8, 4), torch.randn(4, 6), 1.0)], "off") is None
+
+
+def test_make_calibrator_matches_direct_call():
+    torch.manual_seed(5)
+    up = torch.randn(8, 4)
+    down = torch.randn(4, 6)
+    merged = 2 * (up @ down)
+    factors = [(up, down, 1.0), (up, down, 1.0)]
+
+    U_r, S_r, V_r = _svd_of(merged, 4)
+    calibrate = make_calibrator(factors, "balanced")
+    direct = calibration_gammas(U_r, S_r, V_r, factors, alpha=0.5)
+
+    assert torch.allclose(calibrate(U_r, S_r, V_r), direct)
+
+
+def test_make_calibrator_handles_4d_conv_factors():
+    """Conv LoRAs arrive as 4D; the calibrator flattens them the same way the
+    merged delta is flattened in merged_delta_to_lora."""
+    torch.manual_seed(6)
+    up4 = torch.randn(8, 4, 1, 1)
+    down4 = torch.randn(4, 3, 3, 3)
+    up2 = up4.reshape(8, -1)
+    down2 = down4.reshape(4, -1)
+    merged = up2 @ down2
+
+    U_r, S_r, V_r = _svd_of(merged, 4)
+    calibrate = make_calibrator([(up4, down4, 1.0)], "suppress_only")
+
+    assert torch.allclose(calibrate(U_r, S_r, V_r), torch.ones(4), atol=1e-5)
