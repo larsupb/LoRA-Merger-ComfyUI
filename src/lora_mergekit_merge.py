@@ -15,6 +15,7 @@ from mergekit.io.tasks import GatherTensors
 from .architectures.sd_lora import weights_as_tuple
 from .merge.gta import gta_merge, GTA_MODES
 from .merge.lora_refactor import merged_delta_to_lora
+from .merge.svc import SVC_MODES, make_calibrator
 
 # Import merge module components
 from .merge import (
@@ -46,6 +47,23 @@ from .utils import is_clip_layer
 
 # Helper functions moved to src/merge/utils.py
 # Imported above for backward compatibility
+
+
+def build_svc_factors(lora_key_tuples, weights):
+    """Per-task ``(up, down, scale)`` factors for SVC, in stack order.
+
+    ``scale`` folds in both the LoRA's own ``alpha/rank`` and the user's merge
+    strength, so ``scale * up @ down`` is exactly the contribution the merge saw
+    (mirrors the delta construction in ``process_key``). SVC compares against the
+    strength-weighted task delta on purpose: measured against the unweighted one,
+    a user strength below 1 would read as attenuation and get amplified back.
+    """
+    factors = []
+    for i, (u, d, a) in enumerate(lora_key_tuples.values()):
+        rank = u.shape[1]
+        scale = (float(a) / rank) if a is not None else 1.0
+        factors.append((u, d, scale * float(weights[i])))
+    return factors
 
 
 class LoraMergerMergekit:
@@ -101,6 +119,29 @@ class LoraMergerMergekit:
                         ),
                     },
                 ),
+                "svc": (
+                    list(SVC_MODES),
+                    {
+                        "default": "off",
+                        "tooltip": (
+                            "Singular Value Calibration on the merged delta "
+                            "(delta-space methods only: the GTA family, SCE and "
+                            "the interpolation methods).\n"
+                            "LoRAs that share singular directions have those "
+                            "directions counted once per LoRA, so the merge is "
+                            "dominated by what they have in common. SVC measures "
+                            "the over-counting per direction and rescales the "
+                            "singular values to undo it. Singular vectors and "
+                            "output rank are unchanged.\n"
+                            "'off': disabled.\n"
+                            "'balanced': paper default (alpha = 1/K); can both "
+                            "suppress over-counted and amplify under-represented "
+                            "directions.\n"
+                            "'suppress_only': alpha = 1; only ever scales down. "
+                            "Start here if 'balanced' over-sharpens."
+                        ),
+                    },
+                ),
                 "offload_models": ("BOOLEAN", {
                     "default": True,
                     "tooltip": (
@@ -142,6 +183,7 @@ Outputs:
                       merge_clip: bool = True,
                       device=None, dtype=None,
                       refactor_method: str = "energy_rSVD",
+                      svc: str = "off",
                       offload_models: bool = True):
 
         if components is None:
@@ -179,7 +221,8 @@ Outputs:
         # Adjust components to match the method requirements
         merge = self.merge(method=merge_method, method_args=method_args, lambda_=output_scale,
                            spectral_norm_scale=spectral_norm_scale, merge_clip=merge_clip,
-                           device=device, dtype=dtype, refactor_method=refactor_method)
+                           device=device, dtype=dtype, refactor_method=refactor_method,
+                           svc=svc)
         # Clean up VRAM
         torch.cuda.empty_cache()
 
@@ -191,13 +234,14 @@ Outputs:
             "lambda_": output_scale,
             "device": device,
             "dtype": dtype,
-            "refactor_method": refactor_method
+            "refactor_method": refactor_method,
+            "svc": svc
         }
 
         return merge + (merge_context,)
 
     def merge(self, method: MergeMethod, method_args, lambda_, spectral_norm_scale, merge_clip, device, dtype,
-              refactor_method: str = "energy_rSVD"):
+              refactor_method: str = "energy_rSVD", svc: str = "off"):
         # Map the refactor widget choice to the randomized-SVD energy setting:
         # energy_rSVD -> dynamic rank at 99% energy; rSVD -> fixed max input rank.
         refactor_energy = 0.99 if refactor_method == "energy_rSVD" else None
@@ -345,8 +389,14 @@ Outputs:
                     )
 
                 target_rank = max(u.shape[1] for (u, _, _) in lora_key_tuples.values())
+                # The factors are still live here -- the delta-space merge consumed
+                # `deltas`, not lora_key_tuples -- so SVC's per-task responses are
+                # built in factored form and no dense per-task delta is resurrected.
+                calibrate = make_calibrator(
+                    build_svc_factors(lora_key_tuples, weights), svc)
                 up, down, alpha_out = merged_delta_to_lora(
-                    merged, target_rank=target_rank, energy=refactor_energy, device=device)
+                    merged, target_rank=target_rank, energy=refactor_energy,
+                    device=device, calibrate=calibrate)
 
                 if lambda_ < 1.0:
                     up = up * lambda_

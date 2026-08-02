@@ -94,7 +94,7 @@ def test_merger_output_scale():
     keys = list(LoraMergerMergekit.INPUT_TYPES()["required"].keys())
     expected = ["method", "components", "strengths", "output_scale",
                 "spectral_norm_scale", "merge_clip", "device", "dtype", "refactor_method",
-                "offload_models"]
+                "svc", "offload_models"]
     assert keys == expected, f"merger widget order {keys} != {expected}"
     params = inspect.signature(LoraMergerMergekit.lora_mergekit).parameters
     assert "output_scale" in params and "lambda_" not in params, list(params)
