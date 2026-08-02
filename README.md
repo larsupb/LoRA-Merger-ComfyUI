@@ -13,6 +13,7 @@ This is an enhanced fork of laksjdjf's [LoRA Merger](https://github.com/laksjdjf
 - **Mergekit Integration**: SLERP, NuSLERP, NearSwap, SCE, and Karcher come from Arcee AI's Mergekit library
 - **6 Architecture Support**: SD1.5, SDXL, DiT, Flux, Wan 2.2, Qwen Image Edit, and zImage with automatic detection
 - **Spectral Norm Regularization**: Prevent layer dominance with advanced weight normalization
+- **Singular Value Calibration (SVC)**: Opt-in post-merge calibration that detects singular directions shared by several LoRAs and rescales the merged spectrum so they stop being counted once per LoRA. Training-free, data-free, no rank or basis change ([arXiv:2602.05536](https://arxiv.org/abs/2602.05536))
 - **SVD Support**: Full, randomized, and energy-based SVD decomposition with dynamic rank selection
 - **Intelligent Search**: Real-time searchable LoRA selection in Power Stacker for large collections
 - **Modular Architecture**: Clean separation of concerns with focused, single-responsibility modules
@@ -121,6 +122,12 @@ Main merging node. Runs the native delta-space path for the GTA family and Merge
 - `device`: Processing device ("cpu", "cuda")
 - `dtype`: Computation precision ("float32", "float16", "bfloat16")
 - `refactor_method`: How the merged dense delta is decomposed back into a LoRA, for the GTA family only (`energy_rSVD` = randomized SVD with dynamic rank retaining 99% of the delta's energy, recommended; `rSVD` = randomized SVD at the fixed max input rank)
+- `svc`: Singular Value Calibration on the merged delta. Applies to the delta-space methods (the GTA family, SCE, and the interpolation methods); CLIP layers are unaffected.
+  - `off` (default): no calibration.
+  - `balanced`: paper default (α = 1/K). Suppresses over-counted directions and can amplify under-represented ones.
+  - `suppress_only`: α = 1, so the calibration can only scale directions *down*. Use this if `balanced` over-sharpens.
+
+  Why it exists: independently trained LoRAs tend to reuse a small set of singular directions. A linear merge accumulates those directions once per LoRA, inflating their singular values, and the merged LoRA drifts toward whatever its inputs have in common at the expense of what makes each one distinct. SVC measures the inflation per direction and divides it back out. Singular vectors and output rank are untouched — only the magnitudes change. Merging a LoRA with a copy of itself is the clearest case: with `svc: off` the result is 2x the original, with SVC it comes back to 1x.
 
 **Features:**
 - **Delta-space GTA merge**: For the GTA family (Task Arithmetic, TIES, DARE, DELLA, Breadcrumbs) each UNet layer is merged as a full dense delta and refactored back into a LoRA via `refactor_method` — a native implementation, no Mergekit dependency on this path
