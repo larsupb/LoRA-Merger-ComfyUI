@@ -87,3 +87,24 @@ def calibration_gammas(U_r: torch.Tensor, S_r: torch.Tensor, V_r: torch.Tensor,
         denom_acc += s_i.clamp_min(float(alpha))
 
     return k / denom_acc.clamp_min(1e-8)
+
+
+# ---------------------------------------------------------------- modes
+# Widget contract. "off" disables calibration entirely.
+SVC_MODES = ("off", "balanced", "suppress_only")
+
+
+def resolve_alpha(mode: str, n_tasks: int) -> Optional[float]:
+    """Map a widget mode to the ``alpha`` floor, or None when SVC is off.
+
+    ``balanced`` uses the paper default ``1/K``, which lets under-represented
+    directions be amplified as well as suppressed. ``suppress_only`` uses
+    ``alpha = 1``, which floors every term at 1 so ``gamma <= 1`` always.
+    """
+    if mode == "off":
+        return None
+    if mode == "suppress_only":
+        return 1.0
+    if mode == "balanced":
+        return 1.0 / max(1, int(n_tasks))
+    raise ValueError(f"unknown SVC mode {mode!r}; expected one of {SVC_MODES}")
